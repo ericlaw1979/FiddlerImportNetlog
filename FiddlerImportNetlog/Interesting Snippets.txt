@@ -1,0 +1,125 @@
+﻿Life of a URLRequest
+https://chromium.googlesource.com/chromium/src/+/HEAD/net/docs/life-of-a-url-request.md
+
+NetLog Design Doc
+https://www.chromium.org/developers/design-documents/network-stack/netlog
+
+Source ref:
+https://cs.chromium.org/chromium/src/components/net_log/chrome_net_log.cc?type=cs&g=0&l=58
+
+
+Code references below are (c)The Chromium Authors.
+
+void ChromeNetLog::StartWritingToFile(
+    const base::FilePath& path,
+    net::NetLogCaptureMode capture_mode,
+    const base::CommandLine::StringType& command_line_string,
+    const std::string& channel_string) {
+  DCHECK(!path.empty());
+
+  // TODO(739485): The log file does not contain about:flags data.
+  file_net_log_observer_ = net::FileNetLogObserver::CreateUnbounded(
+      path, GetConstants(command_line_string, channel_string));
+
+  file_net_log_observer_->StartObserving(this, capture_mode);
+}
+
+
+
+  network_context->CreateNetLogExporter(mojo::MakeRequest(&net_log_exporter_));
+  base::Value custom_constants = base::Value::FromUniquePtrValue(
+      ChromeNetLog::GetPlatformConstants(command_line_string, channel_string));
+
+
+
+// NetLogCaptureMode specifies the granularity of events that should be emitted
+// to the log. It is a simple wrapper around an integer, so it should be passed
+// to functions by value rather than by reference.
+class NET_EXPORT NetLogCaptureMode {
+ public:
+  // NOTE: Default assignment and copy constructor are OK.
+
+  // The default constructor creates a capture mode equivalent to
+  // Default().
+  NetLogCaptureMode();
+
+  // Constructs a capture mode which logs basic events and event parameters.
+  //    include_cookies_and_credentials() --> false
+  //    include_socket_bytes() --> false
+  static NetLogCaptureMode Default();
+
+  // Constructs a capture mode which logs basic events, and additionally makes
+  // no effort to strip cookies and credentials.
+  //    include_cookies_and_credentials() --> true
+  //    include_socket_bytes() --> false
+  // TODO(bnc): Consider renaming to IncludePrivacyInfo().
+  static NetLogCaptureMode IncludeCookiesAndCredentials();
+
+  // Constructs a capture mode which logs the data sent/received from sockets.
+  //    include_cookies_and_credentials() --> true
+  //    include_socket_bytes() --> true
+  static NetLogCaptureMode IncludeSocketBytes();
+
+  // If include_cookies_and_credentials() is true , then it is OK to log
+  // events which contain cookies, credentials or other privacy sensitive data.
+  // TODO(bnc): Consider renaming to include_privacy_info().
+  bool include_cookies_and_credentials() const;
+
+  // If include_socket_bytes() is true, then it is OK to output the actual
+  // bytes read/written from the network, even if it contains private data.
+  bool include_socket_bytes() const;
+
+
+std::unique_ptr<base::Value> HttpRequestHeaders::NetLogCallback(
+    const std::string* request_line,
+    NetLogCaptureMode capture_mode) const {
+  auto dict = std::make_unique<base::DictionaryValue>();
+  dict->SetKey("line", NetLogStringValue(*request_line));
+  auto headers = std::make_unique<base::ListValue>();
+  for (auto it = headers_.begin(); it != headers_.end(); ++it) {
+    std::string log_value =
+        ElideHeaderValueForNetLog(capture_mode, it->key, it->value);
+    headers->GetList().push_back(
+        NetLogStringValue(base::StrCat({it->key, ": ", log_value})));
+  }
+  dict->Set("headers", std::move(headers));
+  return std::move(dict);
+}
+
+
+
+std::string ElideHeaderValueForNetLog(NetLogCaptureMode capture_mode,
+                                      const std::string& header,
+                                      const std::string& value) {
+  std::string::const_iterator redact_begin = value.begin();
+  std::string::const_iterator redact_end = value.begin();
+
+  if (redact_begin == redact_end &&
+      !capture_mode.include_cookies_and_credentials()) {
+    if (base::EqualsCaseInsensitiveASCII(header, "set-cookie") ||
+        base::EqualsCaseInsensitiveASCII(header, "set-cookie2") ||
+        base::EqualsCaseInsensitiveASCII(header, "cookie") ||
+        base::EqualsCaseInsensitiveASCII(header, "authorization") ||
+        base::EqualsCaseInsensitiveASCII(header, "proxy-authorization")) {
+      redact_begin = value.begin();
+      redact_end = value.end();
+    } else if (base::EqualsCaseInsensitiveASCII(header, "www-authenticate") ||
+               base::EqualsCaseInsensitiveASCII(header, "proxy-authenticate")) {
+      // Look for authentication information from data received from the server
+      // in multi-round Negotiate authentication.
+      HttpAuthChallengeTokenizer challenge(value.begin(), value.end());
+      if (ShouldRedactChallenge(&challenge)) {
+        redact_begin = challenge.params_begin();
+        redact_end = challenge.params_end();
+      }
+    }
+  }
+
+  if (redact_begin == redact_end)
+    return value;
+
+  return std::string(value.begin(), redact_begin) +
+      base::StringPrintf("[%ld bytes were stripped]",
+                         static_cast<long>(redact_end - redact_begin)) +
+      std::string(redact_end, value.end());
+}
