@@ -337,7 +337,7 @@ namespace FiddlerImportNetlog
             foreach (KeyValuePair<int, List<Hashtable>> kvpUR in dictURLRequests)
             {
                 ++iRequest;
-                NewMethod(kvpUR);
+                ParseSessionsFromBucket(kvpUR);
                 int iPct = (int)(100 * (0.75f + 0.25f * (iRequest / (float)cURLRequests)));
                 if (iPct != iLastPct)
                 {
@@ -349,7 +349,7 @@ namespace FiddlerImportNetlog
             return iLastPct;
         }
 
-        private void NewMethod(KeyValuePair<int, List<Hashtable>> kvpUR)
+        private void ParseSessionsFromBucket(KeyValuePair<int, List<Hashtable>> kvpUR)
         {
             List<Hashtable> listEvents = kvpUR.Value;
 
