@@ -7,7 +7,7 @@ using Fiddler;
 
 namespace FiddlerImportNetlog
 {
-    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.1.1). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
+    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.1.1.1). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
     public class HTTPArchiveFormatImport : ISessionImporter
     {
         public Session[] ImportSessions(string sFormat, Dictionary<string, object> dictOptions, EventHandler<Fiddler.ProgressCallbackEventArgs> evtProgressNotifications)

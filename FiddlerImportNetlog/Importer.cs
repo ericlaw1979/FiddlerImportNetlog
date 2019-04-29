@@ -499,11 +499,12 @@ namespace FiddlerImportNetlog
                 oSF |= SessionFlags.ResponseBodyDropped;
             }
 
-            if (null != oRQH)
+            if ((null != oRPH) && msResponseBody.Length > 0)
             {
-                // Body bytes stored in the file were already decompressed, so rename the header so we can use this
-                // session for AutoResponder playback, etc.
-                oRQH.RenameHeaderItems("Content-Encoding", "X-Netlog-Removed-Content-Encoding");
+                // Body bytes stored in the file were already unchunked and decompressed, so rename these
+                // headers so we can use this session for AutoResponder playback, etc.
+                oRPH.RenameHeaderItems("Content-Encoding", "X-Netlog-Removed-Content-Encoding");
+                oRPH.RenameHeaderItems("Transfer-Encoding", "X-Netlog-Removed-Transfer-Encoding");
             }
 
             Session oS = Session.BuildFromData(false,
