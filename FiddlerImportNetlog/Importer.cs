@@ -91,7 +91,6 @@ namespace FiddlerImportNetlog
         {
             _listSessions = listSessions;
             _evtProgressNotifications = evtProgressNotifications;
-
             Stopwatch oSW = Stopwatch.StartNew();
             JSON.JSONParseErrors oErrors;
             Hashtable htFile = JSON.JsonDecode(oSR.ReadToEnd(), out oErrors) as Hashtable;
@@ -103,7 +102,18 @@ namespace FiddlerImportNetlog
             }
 
             NotifyProgress(0.25f, "Finished parsing JSON file; took " + oSW.ElapsedMilliseconds + "ms.");
-            ExtractSessionsFromJSON(htFile);
+            if (!ExtractSessionsFromJSON(htFile))
+            {
+                Session sessFile = Session.BuildFromData(false,
+                    new HTTPRequestHeaders(
+                        String.Format("/file"), 
+                        new[] { "Host: NETLOG" /* TODO: Put something useful here */, "Date: " + DateTime.UtcNow.ToString() }),
+                    Utilities.emptyByteArray,
+                    new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
+                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                listSessions.Insert(0, sessFile);
+            }
         }
 
         private void NotifyProgress(float fPct, string sMessage)
@@ -114,7 +124,9 @@ namespace FiddlerImportNetlog
         public bool ExtractSessionsFromJSON(Hashtable htFile)
         {
             Hashtable htConstants = htFile["constants"] as Hashtable;
+            if (htConstants == null) return false;
             Hashtable htClientInfo = htConstants["clientInfo"] as Hashtable;
+            if (htClientInfo == null) return false;
             sClient = htClientInfo["name"] as string;
 
             #region LookupConstants

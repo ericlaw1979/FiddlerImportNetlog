@@ -6,8 +6,11 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2019 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.1.1.1")]              // ALSO UPDATE THE VERSION in the [ProfferFormat] attribute to match!
+[assembly: AssemblyVersion("1.1.1.2")]              // ALSO UPDATE THE VERSION in the [ProfferFormat] attribute to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
+
+// v1.1.1.2
+// Support .gz compressed JSON logs
 
 // v1.1.1.1
 // Correct rename of Transfer-Encoding and Content-Encoding response headers
