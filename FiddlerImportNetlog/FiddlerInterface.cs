@@ -4,10 +4,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Fiddler;
+using System.IO.Compression;
 
 namespace FiddlerImportNetlog
 {
-    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.1.1.2). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
+    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.1.2). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
     public class HTTPArchiveFormatImport : ISessionImporter
     {
         public Session[] ImportSessions(string sFormat, Dictionary<string, object> dictOptions, EventHandler<Fiddler.ProgressCallbackEventArgs> evtProgressNotifications)
@@ -30,7 +31,7 @@ namespace FiddlerImportNetlog
 
             if ((null == strmContent) && string.IsNullOrEmpty(sFilename))
             {
-                sFilename = Fiddler.Utilities.ObtainOpenFilename("Import " + sFormat, "NetLog JSON (*.json;*.json.gz)|*.json;*.json.gz");
+                sFilename = Fiddler.Utilities.ObtainOpenFilename("Import " + sFormat, "NetLog JSON (*.json[.gz], *.zip)|*.json;*.json.gz;*.zip");
             }
 
             if ((null != strmContent) || !String.IsNullOrEmpty(sFilename))
@@ -48,19 +49,37 @@ namespace FiddlerImportNetlog
                     {                        
                         Stream oFS = File.OpenRead(sFilename);
 
-                        // Check to see if this file data was GZIP'd.
-                        // TODO: Also check to see if the file header is PK and if so, unzip it, and for each file in it, check to see if it's a Netlog capture.
+                        // Check to see if this file data was GZIP'd or PKZIP'd.
                         bool bWasGZIP = false;
-                        if (oFS.ReadByte() == 0x1f && oFS.ReadByte() == 0x8b)
+                        bool bWasPKZIP = false;
+                        int bFirst = oFS.ReadByte();
+                        if (bFirst == 0x1f && oFS.ReadByte() == 0x8b)
                         {
                             bWasGZIP = true;
-                            evtProgressNotifications?.Invoke(null, new ProgressCallbackEventArgs(0, "File was compressed using gzip/DEFLATE"));
+                            evtProgressNotifications?.Invoke(null, new ProgressCallbackEventArgs(0, "Import file was compressed using gzip/DEFLATE."));
+                        }
+                        else if (bFirst == 0x50 && oFS.ReadByte() == 0x4b) {
+                            bWasPKZIP = true;
+                            evtProgressNotifications?.Invoke(null, new ProgressCallbackEventArgs(0, "Import file was a ZIP archive."));
                         }
 
                         oFS.Position = 0;
                         if (bWasGZIP)
                         {
                             oFS = GetUnzippedBytes(oFS);
+                        }
+                        else if (bWasPKZIP)
+                        {
+                            // Open the first JSON file.
+                            ZipArchive oZA = new ZipArchive(oFS, ZipArchiveMode.Read, false, Encoding.UTF8);
+                            foreach (ZipArchiveEntry oZE in oZA.Entries)
+                            {
+                                if (oZE.FullName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    oFS = oZE.Open();
+                                    break;
+                                }
+                            }
                         }
 
                         oSR = new StreamReader(oFS, Encoding.UTF8);

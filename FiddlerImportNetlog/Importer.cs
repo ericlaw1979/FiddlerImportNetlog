@@ -79,7 +79,7 @@ namespace FiddlerImportNetlog
         }
 
         List<Session> _listSessions;
-        EventHandler<ProgressCallbackEventArgs> _evtProgressNotifications;
+        readonly EventHandler<ProgressCallbackEventArgs> _evtProgressNotifications;
         Magics NetLogMagics;
 
         string sClient;
@@ -92,8 +92,8 @@ namespace FiddlerImportNetlog
             _listSessions = listSessions;
             _evtProgressNotifications = evtProgressNotifications;
             Stopwatch oSW = Stopwatch.StartNew();
-            JSON.JSONParseErrors oErrors;
-            Hashtable htFile = JSON.JsonDecode(oSR.ReadToEnd(), out oErrors) as Hashtable;
+            //JSON.JSONParseErrors oErrors;
+            Hashtable htFile = JSON.JsonDecode(oSR.ReadToEnd(), out var oErrors) as Hashtable;
             if (null == htFile)
             {
                 NotifyProgress(1.00f, "Aborting; file is not properly-formatted NetLog JSON.");
@@ -104,10 +104,11 @@ namespace FiddlerImportNetlog
             NotifyProgress(0.25f, "Finished parsing JSON file; took " + oSW.ElapsedMilliseconds + "ms.");
             if (!ExtractSessionsFromJSON(htFile))
             {
+                FiddlerApplication.DoNotifyUser("This JSON file does not seem to contain NetLog data.", "Unexpected Data");
                 Session sessFile = Session.BuildFromData(false,
                     new HTTPRequestHeaders(
-                        String.Format("/file"), 
-                        new[] { "Host: NETLOG" /* TODO: Put something useful here */, "Date: " + DateTime.UtcNow.ToString() }),
+                        String.Format("/file.json"), 
+                        new[] { "Host: IMPORTED", "Date: " + DateTime.UtcNow.ToString() }),
                     Utilities.emptyByteArray,
                     new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
                     Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
