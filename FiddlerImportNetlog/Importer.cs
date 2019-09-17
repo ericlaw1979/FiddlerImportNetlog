@@ -129,11 +129,9 @@ namespace FiddlerImportNetlog
 
         public bool ExtractSessionsFromJSON(Hashtable htFile)
         {
-            Hashtable htConstants = htFile["constants"] as Hashtable;
-            if (htConstants == null) return false;
-            Hashtable htClientInfo = htConstants["clientInfo"] as Hashtable;
-            if (htClientInfo == null) return false;
-            sClient = htClientInfo["name"] as string;
+            if (!(htFile["constants"] is Hashtable htConstants)) return false;
+            if (!(htConstants["clientInfo"] is Hashtable htClientInfo)) return false;
+            this.sClient = htClientInfo["name"] as string;
 
             #region LookupConstants
             Hashtable htEventTypes = htConstants["logEventTypes"] as Hashtable;
@@ -230,100 +228,77 @@ namespace FiddlerImportNetlog
                         SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
             }
 
-            ArrayList alEvents = htFile["events"] as ArrayList;
-
-            var dictURLRequests = new Dictionary<int, List<Hashtable>>();
-
-            int cEvents = alEvents.Count;
             int iEvent = -1;
             int iLastPct = 25;
+            var dictURLRequests = new Dictionary<int, List<Hashtable>>();
+            var dictSockets = new Dictionary<int, List<Hashtable>>();
 
             // Loop over events; bucket those associated to URLRequests by the source request's ID.
+            ArrayList alEvents = htFile["events"] as ArrayList;
+            int cEvents = alEvents.Count;
             foreach (Hashtable htEvent in alEvents)
             {
                 ++iEvent;
                 var htSource = htEvent["source"] as Hashtable;
                 if (null == htSource) continue;
+                int iSourceType = (int)(double)htSource["type"];
 
                 #region ParseCertificateRequestMessagesAndDumpToLog
-                // TODO: This needs to go in a proper aggregator analyzer that pulls all the socket info.
-                if ((int)(double)htSource["type"] == NetLogMagics.SOCKET)
+                if (iSourceType == NetLogMagics.SOCKET)
                 {
                     try
                     {
-                        int iType = (int)(double)htEvent["type"];
-                        var htParams = htEvent["params"] as Hashtable;
-
                         // All events we care about should have parameters.
-                        if (null == htParams) continue;
+                        if (!(htEvent["params"] is Hashtable htParams)) continue;
+                        int iType = (int)(double)htEvent["type"];
 
-                        if (iType == NetLogMagics.SSL_CERTIFICATES_RECEIVED)
+                        List<Hashtable> events;
+                        int iSocketID = (int)(double)htSource["id"];
+
+                        if (iType != NetLogMagics.SSL_CERTIFICATES_RECEIVED &&
+                            iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED) continue;
+
+                        // Get (or create) the List of entries for this SOCKET.
+                        if (!dictSockets.ContainsKey(iSocketID))
                         {
-                            StringBuilder sbCertsReceived = new StringBuilder();
-                            sbCertsReceived.AppendFormat("Got SSL_CERTIFICATES_RECEIVED on Socket #{0}:\n", htSource["id"]);
-                            // {"params":{"certificates":["-----BEGIN CERTIFICATE-----\nMIINqg==\n-----END CERTIFICATE-----\n","-----BEGIN CERTIFICATE-----\u4\n-----END CERTIFICATE-----\n"]},"phase":0,"source":{"id":789,"type":8},"time":"464074729","type":69},
-                            ArrayList alCerts = htParams["certificates"] as ArrayList;
-                            if (null == alCerts)
-                            {
-                                sbCertsReceived.AppendFormat("Certificates Missing\n");
-                                FiddlerApplication.Log.LogString(sbCertsReceived.ToString());
-                                continue;
-                            }
-
-                            foreach (object oCert in alCerts)
-                            {
-                                string sCert = (string)oCert;
-                                if (!String.IsNullOrEmpty(sCert))
-                                {
-                                    sbCertsReceived.AppendLine(sCert);
-                                }
-                            }
-                            FiddlerApplication.Log.LogString(sbCertsReceived.ToString());
-                            continue;
+                            events = new List<Hashtable>();
+                            dictSockets.Add(iSocketID, events);
                         }
-
-                        // Parse out client certificate requests (Type 13==CertificateRequest)
-                        if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
+                        else
                         {
-                            // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60(SSL_HANDSHAKE_MESSAGE_RECEIVED)})
-                            int iHandshakeMessageType = (int)(double)htParams["type"];
-                            if (iHandshakeMessageType != 13) continue;
-
-                            // Okay, it's a CertificateRequest. Log it.
-                            string sBase64Bytes = htParams["bytes"] as string;
-                            if (!String.IsNullOrEmpty(sBase64Bytes))
-                            {
-                                byte[] arrCertificateRequest = Convert.FromBase64String(sBase64Bytes);
-                                FiddlerApplication.Log.LogFormat("Found CertificateRequest on Socket #{0}:\n{1}", htSource["id"], Fiddler.Utilities.ByteArrayToHexView(arrCertificateRequest, 24));
-                                //msResponseBody.Write(arrThisRead, 0, arrThisRead.Length); // WTF, why so verbose?
-                            }
-                            continue;
+                            events = dictSockets[iSocketID];
                         }
+                        // Add this event to the SOCKET's list.
+                        events.Add(htEvent);
                     }
                     catch { }
+
+                    continue;
                 }
                 #endregion ParseCertificateRequestMessagesAndDumpToLog
 
                 // Collect only events related to URL_REQUESTS.
-                if ((int)(double)htSource["type"] != NetLogMagics.URL_REQUEST) continue;
+                if (iSourceType != NetLogMagics.URL_REQUEST) continue;
 
                 int iURLRequestID = (int)(double)htSource["id"];
 
-                List<Hashtable> events;
-
-                // Get (or create) the List of entries for this URLRequest.
-                if (!dictURLRequests.ContainsKey(iURLRequestID))
                 {
-                    events = new List<Hashtable>();
-                    dictURLRequests.Add(iURLRequestID, events);
-                }
-                else
-                {
-                    events = dictURLRequests[iURLRequestID];
-                }
+                    List<Hashtable> events;
 
-                // Add this event to the URLRequest's list.
-                events.Add(htEvent);
+                    // Get (or create) the List of entries for this URLRequest.
+                    if (!dictURLRequests.ContainsKey(iURLRequestID))
+                    {
+                        events = new List<Hashtable>();
+                        dictURLRequests.Add(iURLRequestID, events);
+                    }
+                    else
+                    {
+                        events = dictURLRequests[iURLRequestID];
+                    }
+
+                    // Add this event to the URLRequest's list.
+                    events.Add(htEvent);
+                }
                 int iPct = (int)(100 * (0.25f + 0.50f * (iEvent / (float)cEvents)));
                 if (iPct != iLastPct)
                 {
@@ -351,6 +326,7 @@ namespace FiddlerImportNetlog
             sessSummary.utilSetResponseBody(sbClientInfo.ToString());
 
             GenerateDebugTreeSession(dictURLRequests);
+            GenerateSocketListSession(dictSockets);
 
             NotifyProgress(1, "Import Completed.");
             return true;
@@ -415,6 +391,129 @@ namespace FiddlerImportNetlog
                     SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDebugTreeSession failed: "+ DescribeExceptionWithStack(e)); }
+        }
+
+        private void GenerateSocketListSession(Dictionary<int, List<Hashtable>> dictSockets)
+        {
+            try
+            {
+                Hashtable htAllSockets = new Hashtable();
+                foreach (KeyValuePair<int, List<Hashtable>> kvpSocket in dictSockets)
+                {
+                    Hashtable htThisSocket = new Hashtable();
+                    htAllSockets.Add(kvpSocket.Key, htThisSocket);
+
+                    foreach (Hashtable htEvent in kvpSocket.Value)
+                    {
+                        int iType = (int)(double)htEvent["type"];
+                        var htParams = (Hashtable) htEvent["params"];
+
+                        if (iType == NetLogMagics.SSL_CERTIFICATES_RECEIVED)
+                        {
+                            StringBuilder sbCertsReceived = new StringBuilder();
+                            ArrayList alCerts = htParams["certificates"] as ArrayList;
+
+                            htThisSocket.Add("Server Certificates", alCerts);
+                            continue;
+                        }
+                        // {"params":{"certificates":["-----BEGIN CERTIFICATE-----\nMIINqg==\n-----END CERTIFICATE-----\n","-----BEGIN CERTIFICATE-----\u4\n-----END CERTIFICATE-----\n"]},"phase":0,"source":{"id":789,"type":8},"time":"464074729","type":69},
+                        // Parse out client certificate requests (Type 13==CertificateRequest)
+                        // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60(SSL_HANDSHAKE_MESSAGE_RECEIVED)})
+                        if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
+                        {
+                            int iHandshakeMessageType = (int)(double)htParams["type"];
+                            if (iHandshakeMessageType != 13) continue;
+
+                            // Okay, it's a CertificateRequest. Log it.
+                            string sBase64Bytes = htParams["bytes"] as string;
+                            if (!String.IsNullOrEmpty(sBase64Bytes))
+                            {
+                                var htCertFilter = new Hashtable();
+                                htThisSocket.Add("Request for Client Certificate", htCertFilter);
+                                htThisSocket.Add("RAW", sBase64Bytes);
+
+                                byte[] arrCertRequest = Convert.FromBase64String(sBase64Bytes);
+
+                                Debug.Assert(13 == arrCertRequest[0]);
+                                int iPayloadSize = (arrCertRequest[1] << 16) +
+                                                   (arrCertRequest[2] << 8) +
+                                                   arrCertRequest[3];
+
+                                Debug.Assert(iPayloadSize == arrCertRequest.Length - 4);
+
+                                byte cCertTypes = arrCertRequest[4];
+                                var alCertTypes = new ArrayList();
+                                for (int ixCertType = 0; ixCertType<cCertTypes; ++ixCertType)
+                                {
+                                    int iCertType = arrCertRequest[5 + ixCertType];
+                                    string sCertType;
+                                    // https://tools.ietf.org/html/rfc5246#section-12 ClientCertificateType
+                                    switch (iCertType)
+                                    {
+                                        case 1: sCertType = "rsa_sign"; break;
+                                        case 2: sCertType = "dss_sign"; break;
+                                        case 3: sCertType = "rsa_fixed_dh"; break;
+                                        case 4: sCertType = "dss_fixed_dh"; break;
+                                        case 5: sCertType = "rsa_ephemeral_dh_RESERVED"; break;
+                                        case 6: sCertType = "dss_ephemeral_dh_RESERVED"; break;
+                                        case 20: sCertType = "fortezza_dms_RESERVED"; break;
+                                        case 0x40: sCertType = "ecdsa_sign"; break;
+                                        default: sCertType = String.Format("unknown(0x{0:x})", iCertType); break;
+                                    }
+                                    alCertTypes.Add(sCertType);
+                                }
+                                htCertFilter.Add("Accepted ClientCertificateTypes", alCertTypes);
+
+                                int iPtr = 5 + cCertTypes;
+                                int cSigHashAlgs = (arrCertRequest[iPtr++] << 8) +
+                                                    arrCertRequest[iPtr++];
+
+                                var alSigHashAlgs = new ArrayList();
+
+                                // TLS/1.2+ have sig/hash pairs
+                                for (int ixSigHashPair = 0; ixSigHashPair < cSigHashAlgs; ++ixSigHashPair) {
+                                    int iHash = arrCertRequest[iPtr + 2 * ixSigHashPair];
+                                    int iSig =  arrCertRequest[1+ iPtr + 2 * ixSigHashPair];
+                                    alSigHashAlgs.Add(String.Format("{0}_{1}", iHash, iSig));
+                                    /*{none(0), md5(1), sha1(2), sha224(3), sha256(4), sha384(5), sha512(6), (255)} HashAlgorithm;
+                                      {anonymous(0), rsa(1), dsa(2), ecdsa(3), (255) }SignatureAlgorithm;
+                                      struct {HashAlgorithm hash;SignatureAlgorithm signature;} SignatureAndHashAlgorithm;
+                                      SignatureAndHashAlgorithm supported_signature_algorithms<2..2^16-2>;*/
+                                }
+                                htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
+                                iPtr += (1+ 2 * cSigHashAlgs);
+                                //FiddlerApplication.Log.LogFormat("Found CertificateRequest on Socket #{0}:\n{1}", iSocketId, Fiddler.Utilities.ByteArrayToHexView(arrCertificateRequest, 24));
+                                int cbCADistinguishedNames = (arrCertRequest[iPtr++] << 8) +
+                                                              arrCertRequest[iPtr++];
+
+                                var alCADNs = new ArrayList();
+                                while (cbCADistinguishedNames > 0)
+                                {
+                                    int cbThisDN = arrCertRequest[iPtr++];
+                                    Debug.Assert(cbThisDN < cbCADistinguishedNames);
+                                    string sDN = Encoding.ASCII.GetString(arrCertRequest, iPtr, cbThisDN);
+                                    alCADNs.Add(sDN);
+                                    iPtr += cbThisDN;
+                                    cbCADistinguishedNames -= (1+cbThisDN);
+                                }
+                                htCertFilter.Add("Distinguished Names", alCADNs);
+
+                            }
+                            continue;
+                        }
+                    }
+                }
+
+                _listSessions.Add(Session.BuildFromData(false,
+                    new HTTPRequestHeaders(
+                        String.Format("/SECURE_SOCKETS"), // TODO: Add Machine name?
+                        new[] { "Host: NETLOG" }),
+                    Utilities.emptyByteArray,
+                    new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllSockets)),
+                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+            }
+            catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateSocketListSession failed: " + DescribeExceptionWithStack(e)); }
         }
 
         private int GenerateSessionsFromURLRequests(Dictionary<int, List<Hashtable>> dictURLRequests)
