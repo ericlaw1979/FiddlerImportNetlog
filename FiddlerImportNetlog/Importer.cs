@@ -17,7 +17,11 @@ namespace FiddlerImportNetlog
         /// </summary>
         struct Magics
         {
+            // Sources
             public int URL_REQUEST;
+            public int SOCKET;
+
+            // Events
             public int URL_REQUEST_START_JOB;
             public int SEND_HEADERS;
             public int SEND_QUIC_HEADERS;
@@ -25,6 +29,8 @@ namespace FiddlerImportNetlog
             public int READ_HEADERS;
             public int FILTERED_BYTES_READ;
             public int SEND_BODY;
+            public int SSL_CERTIFICATES_RECEIVED;
+            public int SSL_HANDSHAKE_MESSAGE_RECEIVED;
         }
 
         internal static string DescribeExceptionWithStack(Exception eX)
@@ -92,8 +98,7 @@ namespace FiddlerImportNetlog
             _listSessions = listSessions;
             _evtProgressNotifications = evtProgressNotifications;
             Stopwatch oSW = Stopwatch.StartNew();
-            //JSON.JSONParseErrors oErrors;
-            Hashtable htFile = JSON.JsonDecode(oSR.ReadToEnd(), out var oErrors) as Hashtable;
+            Hashtable htFile = JSON.JsonDecode(oSR.ReadToEnd(), out _) as Hashtable;
             if (null == htFile)
             {
                 NotifyProgress(1.00f, "Aborting; file is not properly-formatted NetLog JSON.");
@@ -134,34 +139,48 @@ namespace FiddlerImportNetlog
             Hashtable htEventTypes = htConstants["logEventTypes"] as Hashtable;
             Hashtable htNetErrors = htConstants["netError"] as Hashtable;
             Hashtable htSourceTypes = htConstants["logSourceType"] as Hashtable;
+
+            // TODO: These should probably use a convenient wrapper for GetHashtableInt
+
+            // Sources
             NetLogMagics.URL_REQUEST = (int)(double)htSourceTypes["URL_REQUEST"];
+            NetLogMagics.SOCKET = (int)(double)htSourceTypes["SOCKET"];
 
+            #region GetEventTypes
+            // HTTP-level Events
             NetLogMagics.URL_REQUEST_START_JOB = (int)(double)htEventTypes["URL_REQUEST_START_JOB"];
-
             NetLogMagics.SEND_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"];
             NetLogMagics.SEND_QUIC_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"];
             NetLogMagics.SEND_HTTP2_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"];
-
             NetLogMagics.READ_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"];
             NetLogMagics.FILTERED_BYTES_READ = (int)(double)htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"];
             NetLogMagics.SEND_BODY = (int)(double)htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_BODY"];
-            #endregion LookupConstants
 
+            // Socket-level Events
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = (int)(double)htEventTypes["SSL_CERTIFICATES_RECEIVED"];
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = (int)(double)htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"];
+
+            // Get ALL event type names as strings for pretty print view
             dictEventTypes = new Dictionary<int, string>();
             foreach (DictionaryEntry de in htEventTypes)
             {
                 dictEventTypes.Add((int)(double)de.Value, de.Key as String);
             }
+            #endregion
 
+            #region GetNetErrors
             dictNetErrors = new Dictionary<int, string>();
             foreach (DictionaryEntry de in htNetErrors)
             {
                 dictNetErrors.Add((int)(double)de.Value, de.Key as String);
             }
+            #endregion
 
             int iLogVersion = (int)(double)htConstants["logFormatVersion"];
             NotifyProgress(0, "Found NetLog v" + iLogVersion + ".");
+            #endregion LookupConstants
 
+            #region GetBaseTime
             // Base time for all events' relative timestamps.
             object o = htConstants["timeTickOffset"];
             if (o is string)
@@ -174,7 +193,7 @@ namespace FiddlerImportNetlog
             }
             DateTimeOffset dtBase = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(baseTime), TimeZoneInfo.Local);
             FiddlerApplication.Log.LogFormat("Base capture time is {0} aka {1}", baseTime, dtBase);
-
+            #endregion
 
             // Create a Summary Session, the response body of which we'll fill in later.
             Session sessSummary = Session.BuildFromData(false,
@@ -211,7 +230,6 @@ namespace FiddlerImportNetlog
                         SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
             }
 
-            
             ArrayList alEvents = htFile["events"] as ArrayList;
 
             var dictURLRequests = new Dictionary<int, List<Hashtable>>();
@@ -227,6 +245,65 @@ namespace FiddlerImportNetlog
                 var htSource = htEvent["source"] as Hashtable;
                 if (null == htSource) continue;
 
+                #region ParseCertificateRequestMessagesAndDumpToLog
+                // TODO: This needs to go in a proper aggregator analyzer that pulls all the socket info.
+                if ((int)(double)htSource["type"] == NetLogMagics.SOCKET)
+                {
+                    try
+                    {
+                        int iType = (int)(double)htEvent["type"];
+                        var htParams = htEvent["params"] as Hashtable;
+
+                        // All events we care about should have parameters.
+                        if (null == htParams) continue;
+
+                        if (iType == NetLogMagics.SSL_CERTIFICATES_RECEIVED)
+                        {
+                            StringBuilder sbCertsReceived = new StringBuilder();
+                            sbCertsReceived.AppendFormat("Got SSL_CERTIFICATES_RECEIVED on Socket #{0}:\n", htSource["id"]);
+                            // {"params":{"certificates":["-----BEGIN CERTIFICATE-----\nMIINqg==\n-----END CERTIFICATE-----\n","-----BEGIN CERTIFICATE-----\u4\n-----END CERTIFICATE-----\n"]},"phase":0,"source":{"id":789,"type":8},"time":"464074729","type":69},
+                            ArrayList alCerts = htParams["certificates"] as ArrayList;
+                            if (null == alCerts)
+                            {
+                                sbCertsReceived.AppendFormat("Certificates Missing\n");
+                                FiddlerApplication.Log.LogString(sbCertsReceived.ToString());
+                                continue;
+                            }
+
+                            foreach (object oCert in alCerts)
+                            {
+                                string sCert = (string)oCert;
+                                if (!String.IsNullOrEmpty(sCert))
+                                {
+                                    sbCertsReceived.AppendLine(sCert);
+                                }
+                            }
+                            FiddlerApplication.Log.LogString(sbCertsReceived.ToString());
+                            continue;
+                        }
+
+                        // Parse out client certificate requests (Type 13==CertificateRequest)
+                        if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
+                        {
+                            // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60(SSL_HANDSHAKE_MESSAGE_RECEIVED)})
+                            int iHandshakeMessageType = (int)(double)htParams["type"];
+                            if (iHandshakeMessageType != 13) continue;
+
+                            // Okay, it's a CertificateRequest. Log it.
+                            string sBase64Bytes = htParams["bytes"] as string;
+                            if (!String.IsNullOrEmpty(sBase64Bytes))
+                            {
+                                byte[] arrCertificateRequest = Convert.FromBase64String(sBase64Bytes);
+                                FiddlerApplication.Log.LogFormat("Found CertificateRequest on Socket #{0}:\n{1}", htSource["id"], Fiddler.Utilities.ByteArrayToHexView(arrCertificateRequest, 24));
+                                //msResponseBody.Write(arrThisRead, 0, arrThisRead.Length); // WTF, why so verbose?
+                            }
+                            continue;
+                        }
+                    }
+                    catch { }
+                }
+                #endregion ParseCertificateRequestMessagesAndDumpToLog
+
                 // Collect only events related to URL_REQUESTS.
                 if ((int)(double)htSource["type"] != NetLogMagics.URL_REQUEST) continue;
 
@@ -234,6 +311,7 @@ namespace FiddlerImportNetlog
 
                 List<Hashtable> events;
 
+                // Get (or create) the List of entries for this URLRequest.
                 if (!dictURLRequests.ContainsKey(iURLRequestID))
                 {
                     events = new List<Hashtable>();
@@ -499,7 +577,8 @@ namespace FiddlerImportNetlog
             BuildAndAddSession(ref oSF, ref oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
         }
 
-        private void BuildAndAddSession(ref SessionFlags oSF, ref HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody, Dictionary<string, string> dictSessionFlags, string sURL, string sMethod, SessionTimers oTimers, int cbDroppedResponseBody)
+        private void BuildAndAddSession(ref SessionFlags oSF, ref HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody, 
+                                        Dictionary<string, string> dictSessionFlags, string sURL, string sMethod, SessionTimers oTimers, int cbDroppedResponseBody)
         {
             // TODO: Sanity-check missing headers.
             if (null == oRQH && !String.IsNullOrWhiteSpace(sURL))
