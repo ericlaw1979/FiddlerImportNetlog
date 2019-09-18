@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Fiddler;
 using Fiddler.WebFormats;
@@ -522,12 +524,14 @@ namespace FiddlerImportNetlog
                             {
                                 int cbThisDN = (arrCertRequest[iPtr++] << 8) + arrCertRequest[iPtr++];
                                 Debug.Assert(cbThisDN < cbCADistinguishedNames);
-                                string sDN = Encoding.ASCII.GetString(arrCertRequest, iPtr, cbThisDN);
-                                alCADNs.Add(sDN);
+                                byte[] bytesDER = new byte[cbThisDN];
+                                Buffer.BlockCopy(arrCertRequest, iPtr, bytesDER, 0, cbThisDN);
+                                AsnEncodedData asndata = new AsnEncodedData(bytesDER);
+                                alCADNs.Add(new X500DistinguishedName(asndata).Name);
                                 iPtr += cbThisDN;
                                 cbCADistinguishedNames -= (2+cbThisDN);
                             }
-                            htCertFilter.Add("Distinguished Names (TODO: Parse as DER)", alCADNs);
+                            htCertFilter.Add("Distinguished Names", alCADNs);
 
                             continue;
                         }
