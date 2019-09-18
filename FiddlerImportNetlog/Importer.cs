@@ -426,79 +426,109 @@ namespace FiddlerImportNetlog
 
                             // Okay, it's a CertificateRequest. Log it.
                             string sBase64Bytes = htParams["bytes"] as string;
-                            if (!String.IsNullOrEmpty(sBase64Bytes))
+                            if (String.IsNullOrEmpty(sBase64Bytes)) continue;
+
+                            // BORING SSL: https://cs.chromium.org/chromium/src/third_party/boringssl/src/ssl/handshake_client.cc?l=1102&rcl=5ce7022394055e183c12368778d361461fe90a6e
+
+                            var htCertFilter = new Hashtable();
+                            htThisSocket.Add("Request for Client Certificate", htCertFilter);
+                            htThisSocket.Add("RAW", sBase64Bytes);
+
+                            byte[] arrCertRequest = Convert.FromBase64String(sBase64Bytes);
+
+                            Debug.Assert(13 == arrCertRequest[0]);
+                            int iPayloadSize = (arrCertRequest[1] << 16) +
+                                                (arrCertRequest[2] << 8) +
+                                                arrCertRequest[3];
+
+                            Debug.Assert(iPayloadSize == arrCertRequest.Length - 4);
+
+                            byte cCertTypes = arrCertRequest[4];
+                            var alCertTypes = new ArrayList();
+                            for (int ixCertType = 0; ixCertType<cCertTypes; ++ixCertType)
                             {
-                                var htCertFilter = new Hashtable();
-                                htThisSocket.Add("Request for Client Certificate", htCertFilter);
-                                htThisSocket.Add("RAW", sBase64Bytes);
-
-                                byte[] arrCertRequest = Convert.FromBase64String(sBase64Bytes);
-
-                                Debug.Assert(13 == arrCertRequest[0]);
-                                int iPayloadSize = (arrCertRequest[1] << 16) +
-                                                   (arrCertRequest[2] << 8) +
-                                                   arrCertRequest[3];
-
-                                Debug.Assert(iPayloadSize == arrCertRequest.Length - 4);
-
-                                byte cCertTypes = arrCertRequest[4];
-                                var alCertTypes = new ArrayList();
-                                for (int ixCertType = 0; ixCertType<cCertTypes; ++ixCertType)
+                                int iCertType = arrCertRequest[5 + ixCertType];
+                                string sCertType;
+                                // https://tools.ietf.org/html/rfc5246#section-12 ClientCertificateType
+                                switch (iCertType)
                                 {
-                                    int iCertType = arrCertRequest[5 + ixCertType];
-                                    string sCertType;
-                                    // https://tools.ietf.org/html/rfc5246#section-12 ClientCertificateType
-                                    switch (iCertType)
-                                    {
-                                        case 1: sCertType = "rsa_sign"; break;
-                                        case 2: sCertType = "dss_sign"; break;
-                                        case 3: sCertType = "rsa_fixed_dh"; break;
-                                        case 4: sCertType = "dss_fixed_dh"; break;
-                                        case 5: sCertType = "rsa_ephemeral_dh_RESERVED"; break;
-                                        case 6: sCertType = "dss_ephemeral_dh_RESERVED"; break;
-                                        case 20: sCertType = "fortezza_dms_RESERVED"; break;
-                                        case 0x40: sCertType = "ecdsa_sign"; break;
-                                        default: sCertType = String.Format("unknown(0x{0:x})", iCertType); break;
-                                    }
-                                    alCertTypes.Add(sCertType);
+                                    // https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-2
+                                    case 1: sCertType = "rsa_sign"; break;
+                                    case 2: sCertType = "dss_sign"; break;
+                                    case 3: sCertType = "rsa_fixed_dh"; break;
+                                    case 4: sCertType = "dss_fixed_dh"; break;
+                                    case 5: sCertType = "rsa_ephemeral_dh_RESERVED"; break;
+                                    case 6: sCertType = "dss_ephemeral_dh_RESERVED"; break;
+                                    case 20: sCertType = "fortezza_dms_RESERVED"; break;
+                                    case 0x40: sCertType = "ecdsa_sign"; break;
+                                    case 0x41: sCertType = "rsa_fixed_ecdh"; break;
+                                    case 0x42: sCertType = "ecdsa_fixed_ecdh"; break;
+                                    case 0x43: sCertType = "gost_sign256"; break;
+                                    case 0x44: sCertType = "gost_sign512"; break;
+                                    default: sCertType = String.Format("unknown(0x{0:x})", iCertType); break;
                                 }
-                                htCertFilter.Add("Accepted ClientCertificateTypes", alCertTypes);
-
-                                int iPtr = 5 + cCertTypes;
-                                int cSigHashAlgs = (arrCertRequest[iPtr++] << 8) +
-                                                    arrCertRequest[iPtr++];
-
-                                var alSigHashAlgs = new ArrayList();
-
-                                // TLS/1.2+ have sig/hash pairs
-                                for (int ixSigHashPair = 0; ixSigHashPair < cSigHashAlgs; ++ixSigHashPair) {
-                                    int iHash = arrCertRequest[iPtr + 2 * ixSigHashPair];
-                                    int iSig =  arrCertRequest[1+ iPtr + 2 * ixSigHashPair];
-                                    alSigHashAlgs.Add(String.Format("{0}_{1}", iHash, iSig));
-                                    /*{none(0), md5(1), sha1(2), sha224(3), sha256(4), sha384(5), sha512(6), (255)} HashAlgorithm;
-                                      {anonymous(0), rsa(1), dsa(2), ecdsa(3), (255) }SignatureAlgorithm;
-                                      struct {HashAlgorithm hash;SignatureAlgorithm signature;} SignatureAndHashAlgorithm;
-                                      SignatureAndHashAlgorithm supported_signature_algorithms<2..2^16-2>;*/
-                                }
-                                htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
-                                iPtr += (1+ 2 * cSigHashAlgs);
-                                //FiddlerApplication.Log.LogFormat("Found CertificateRequest on Socket #{0}:\n{1}", iSocketId, Fiddler.Utilities.ByteArrayToHexView(arrCertificateRequest, 24));
-                                int cbCADistinguishedNames = (arrCertRequest[iPtr++] << 8) +
-                                                              arrCertRequest[iPtr++];
-
-                                var alCADNs = new ArrayList();
-                                while (cbCADistinguishedNames > 0)
-                                {
-                                    int cbThisDN = arrCertRequest[iPtr++];
-                                    Debug.Assert(cbThisDN < cbCADistinguishedNames);
-                                    string sDN = Encoding.ASCII.GetString(arrCertRequest, iPtr, cbThisDN);
-                                    alCADNs.Add(sDN);
-                                    iPtr += cbThisDN;
-                                    cbCADistinguishedNames -= (1+cbThisDN);
-                                }
-                                htCertFilter.Add("Distinguished Names", alCADNs);
-
+                                alCertTypes.Add(sCertType);
                             }
+                            htCertFilter.Add("Accepted ClientCertificateTypes", alCertTypes);
+
+                            int iPtr = 5 + cCertTypes;
+                            int cbSigHashAlgs = (arrCertRequest[iPtr++] << 8) +
+                                                 arrCertRequest[iPtr++];
+                            Debug.Assert((cbSigHashAlgs % 2) == 0);
+
+                            var alSigHashAlgs = new ArrayList();
+
+                            // TODO: Only TLS/1.2+ have sig/hash pairs; these are omitted in TLS1.1 and earlier
+                            for (int ixSigHashPair = 0; ixSigHashPair < cbSigHashAlgs/2; ++ixSigHashPair) {
+                                int iHash = arrCertRequest[iPtr + (2*ixSigHashPair)];
+                                int iSig =  arrCertRequest[iPtr + (2*ixSigHashPair)+1];
+                                string sHash;
+                                string sSig;
+                                switch (iHash)
+                                {
+                                    // Hash https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-18
+                                    case 0: sHash = "none"; break;
+                                    case 1: sHash = "md5"; break;
+                                    case 2: sHash = "sha1"; break;
+                                    case 3: sHash = "sha224"; break;
+                                    case 4: sHash = "sha256"; break;
+                                    case 5: sHash = "sha384"; break;
+                                    case 6: sHash = "sha512"; break;
+                                    default: sHash = String.Format("unknown(0x{0:x})", iHash); break;
+                                }
+                                switch (iSig)
+                                {
+                                    // Sigs https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-16
+                                    case 0: sSig = "anonymous"; break;
+                                    case 1: sSig = "rsa"; break;
+                                    case 2: sSig = "dsa"; break;
+                                    case 3: sSig = "ecdsa"; break;
+                                    case 7: sSig = "ed25519"; break;
+                                    case 8: sSig = "ed448"; break;
+                                    case 64: sSig = "gostr34102012_256"; break;
+                                    case 65: sSig = "gostr34102012_512"; break;
+                                    default: sSig = String.Format("unknown(0x{0:x})", iSig); break;
+                                }
+                                alSigHashAlgs.Add(String.Format("{0}_{1}", sHash, sSig));
+                            }
+                            htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
+                            iPtr += (cbSigHashAlgs);
+                            //FiddlerApplication.Log.LogFormat("Found CertificateRequest on Socket #{0}:\n{1}", iSocketId, Fiddler.Utilities.ByteArrayToHexView(arrCertificateRequest, 24));
+                            int cbCADistinguishedNames = (arrCertRequest[iPtr++] << 8) +
+                                                          arrCertRequest[iPtr++];
+
+                            var alCADNs = new ArrayList();
+                            while (cbCADistinguishedNames > 0)
+                            {
+                                int cbThisDN = (arrCertRequest[iPtr++] << 8) + arrCertRequest[iPtr++];
+                                Debug.Assert(cbThisDN < cbCADistinguishedNames);
+                                string sDN = Encoding.ASCII.GetString(arrCertRequest, iPtr, cbThisDN);
+                                alCADNs.Add(sDN);
+                                iPtr += cbThisDN;
+                                cbCADistinguishedNames -= (2+cbThisDN);
+                            }
+                            htCertFilter.Add("Distinguished Names (TODO: Parse as DER)", alCADNs);
+
                             continue;
                         }
                     }
