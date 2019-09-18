@@ -482,36 +482,7 @@ namespace FiddlerImportNetlog
 
                             // TODO: Only TLS/1.2+ have sig/hash pairs; these are omitted in TLS1.1 and earlier
                             for (int ixSigHashPair = 0; ixSigHashPair < cbSigHashAlgs/2; ++ixSigHashPair) {
-                                int iHash = arrCertRequest[iPtr + (2*ixSigHashPair)];
-                                int iSig =  arrCertRequest[iPtr + (2*ixSigHashPair)+1];
-                                string sHash;
-                                string sSig;
-                                switch (iHash)
-                                {
-                                    // Hash https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-18
-                                    case 0: sHash = "none"; break;
-                                    case 1: sHash = "md5"; break;
-                                    case 2: sHash = "sha1"; break;
-                                    case 3: sHash = "sha224"; break;
-                                    case 4: sHash = "sha256"; break;
-                                    case 5: sHash = "sha384"; break;
-                                    case 6: sHash = "sha512"; break;
-                                    default: sHash = String.Format("unknown(0x{0:x})", iHash); break;
-                                }
-                                switch (iSig)
-                                {
-                                    // Sigs https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-16
-                                    case 0: sSig = "anonymous"; break;
-                                    case 1: sSig = "rsa"; break;
-                                    case 2: sSig = "dsa"; break;
-                                    case 3: sSig = "ecdsa"; break;
-                                    case 7: sSig = "ed25519"; break;
-                                    case 8: sSig = "ed448"; break;
-                                    case 64: sSig = "gostr34102012_256"; break;
-                                    case 65: sSig = "gostr34102012_512"; break;
-                                    default: sSig = String.Format("unknown(0x{0:x})", iSig); break;
-                                }
-                                alSigHashAlgs.Add(String.Format("{0}_{1}", sHash, sSig));
+                                alSigHashAlgs.Add(GetHashSigString(arrCertRequest[iPtr + (2*ixSigHashPair)], arrCertRequest[iPtr + (2*ixSigHashPair) + 1]));
                             }
                             htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
                             iPtr += (cbSigHashAlgs);
@@ -519,19 +490,27 @@ namespace FiddlerImportNetlog
                             int cbCADistinguishedNames = (arrCertRequest[iPtr++] << 8) +
                                                           arrCertRequest[iPtr++];
 
-                            var alCADNs = new ArrayList();
-                            while (cbCADistinguishedNames > 0)
+                            try
                             {
-                                int cbThisDN = (arrCertRequest[iPtr++] << 8) + arrCertRequest[iPtr++];
-                                Debug.Assert(cbThisDN < cbCADistinguishedNames);
-                                byte[] bytesDER = new byte[cbThisDN];
-                                Buffer.BlockCopy(arrCertRequest, iPtr, bytesDER, 0, cbThisDN);
-                                AsnEncodedData asndata = new AsnEncodedData(bytesDER);
-                                alCADNs.Add(new X500DistinguishedName(asndata).Name);
-                                iPtr += cbThisDN;
-                                cbCADistinguishedNames -= (2+cbThisDN);
+                                var alCADNs = new ArrayList();
+                                while (cbCADistinguishedNames > 0)
+                                {
+                                    int cbThisDN = (arrCertRequest[iPtr++] << 8) + arrCertRequest[iPtr++];
+                                    Debug.Assert(cbThisDN < cbCADistinguishedNames);
+                                    try
+                                    {
+                                        byte[] bytesDER = new byte[cbThisDN];
+                                        Buffer.BlockCopy(arrCertRequest, iPtr, bytesDER, 0, cbThisDN);
+                                        AsnEncodedData asndata = new AsnEncodedData(bytesDER);
+                                        alCADNs.Add(new X500DistinguishedName(asndata).Name);
+                                    }
+                                    catch { Debug.Assert(false); }
+                                    iPtr += cbThisDN;
+                                    cbCADistinguishedNames -= (2 + cbThisDN);
+                                }
+                                htCertFilter.Add("Accepted Authorities", alCADNs);
                             }
-                            htCertFilter.Add("Distinguished Names", alCADNs);
+                            catch { }
 
                             continue;
                         }
@@ -550,6 +529,37 @@ namespace FiddlerImportNetlog
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateSocketListSession failed: " + DescribeExceptionWithStack(e)); }
         }
 
+        private static string GetHashSigString(int iHash, int iSig)
+        {
+            string sHash;
+            string sSig;
+            switch (iHash)
+            {
+                // Hash https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-18
+                case 0: sHash = "none"; break;
+                case 1: sHash = "md5"; break;
+                case 2: sHash = "sha1"; break;
+                case 3: sHash = "sha224"; break;
+                case 4: sHash = "sha256"; break;
+                case 5: sHash = "sha384"; break;
+                case 6: sHash = "sha512"; break;
+                default: sHash = String.Format("unknown(0x{0:x})", iHash); break;
+            }
+            switch (iSig)
+            {
+                // Sigs https://www.iana.org/assignments/tls-parameters/tls-parameters.xml#tls-parameters-16
+                case 0: sSig = "anonymous"; break;
+                case 1: sSig = "rsa"; break;
+                case 2: sSig = "dsa"; break;
+                case 3: sSig = "ecdsa"; break;
+                case 7: sSig = "ed25519"; break;
+                case 8: sSig = "ed448"; break;
+                case 64: sSig = "gostr34102012_256"; break;
+                case 65: sSig = "gostr34102012_512"; break;
+                default: sSig = String.Format("unknown(0x{0:x})", iSig); break;
+            }
+            return String.Format("{0}_{1}", sHash, sSig);
+        }
         private int GenerateSessionsFromURLRequests(Dictionary<int, List<Hashtable>> dictURLRequests)
         {
             int cURLRequests = dictURLRequests.Count;
