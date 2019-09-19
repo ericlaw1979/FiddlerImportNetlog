@@ -233,7 +233,7 @@ namespace FiddlerImportNetlog
             int iEvent = -1;
             int iLastPct = 25;
             var dictURLRequests = new Dictionary<int, List<Hashtable>>();
-            var dictSockets = new Dictionary<int, List<Hashtable>>();
+            var dictSecureSockets = new Dictionary<int, List<Hashtable>>();
 
             // Loop over events; bucket those associated to URLRequests by the source request's ID.
             ArrayList alEvents = htFile["events"] as ArrayList;
@@ -261,14 +261,14 @@ namespace FiddlerImportNetlog
                             iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED) continue;
 
                         // Get (or create) the List of entries for this SOCKET.
-                        if (!dictSockets.ContainsKey(iSocketID))
+                        if (!dictSecureSockets.ContainsKey(iSocketID))
                         {
                             events = new List<Hashtable>();
-                            dictSockets.Add(iSocketID, events);
+                            dictSecureSockets.Add(iSocketID, events);
                         }
                         else
                         {
-                            events = dictSockets[iSocketID];
+                            events = dictSecureSockets[iSocketID];
                         }
                         // Add this event to the SOCKET's list.
                         events.Add(htEvent);
@@ -328,7 +328,7 @@ namespace FiddlerImportNetlog
             sessSummary.utilSetResponseBody(sbClientInfo.ToString());
 
             GenerateDebugTreeSession(dictURLRequests);
-            GenerateSocketListSession(dictSockets);
+            GenerateSocketListSession(dictSecureSockets);
 
             NotifyProgress(1, "Import Completed.");
             return true;
@@ -383,14 +383,17 @@ namespace FiddlerImportNetlog
                     htDebug.Add(kvpURLRequest.Key, alE);
                 }
 
-                _listSessions.Add(Session.BuildFromData(false,
-                    new HTTPRequestHeaders(
-                        String.Format("/URL_REQUESTS"), // TODO: Add Machine name?
-                        new[] { "Host: NETLOG" }),
-                    Utilities.emptyByteArray,
-                    new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htDebug)),
-                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                if (htDebug.Count > 0)
+                {
+                    _listSessions.Add(Session.BuildFromData(false,
+                        new HTTPRequestHeaders(
+                            String.Format("/URL_REQUESTS"), // TODO: Add Machine name?
+                            new[] { "Host: NETLOG" }),
+                        Utilities.emptyByteArray,
+                        new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htDebug)),
+                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                }
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDebugTreeSession failed: "+ DescribeExceptionWithStack(e)); }
         }
@@ -402,8 +405,8 @@ namespace FiddlerImportNetlog
                 Hashtable htAllSockets = new Hashtable();
                 foreach (KeyValuePair<int, List<Hashtable>> kvpSocket in dictSockets)
                 {
+                    string sSubjectCNinFirstCert = String.Empty;
                     Hashtable htThisSocket = new Hashtable();
-                    htAllSockets.Add(kvpSocket.Key, htThisSocket);
 
                     foreach (Hashtable htEvent in kvpSocket.Value)
                     {
@@ -415,6 +418,18 @@ namespace FiddlerImportNetlog
                             StringBuilder sbCertsReceived = new StringBuilder();
                             ArrayList alCerts = htParams["certificates"] as ArrayList;
 
+                            // Try to promote the SubjectCN to the title of this node
+                            try
+                            {
+                                if (String.IsNullOrEmpty(sSubjectCNinFirstCert) && alCerts.Count > 0)
+                                {
+                                    var FirstCert = new X509Certificate2();
+                                    string sCertInfo = alCerts[0] as string;
+                                    FirstCert.Import(Encoding.ASCII.GetBytes(sCertInfo));
+                                    sSubjectCNinFirstCert = (" - " + FirstCert.GetNameInfo(X509NameType.SimpleName, false)).ToLower();
+                                }
+                            }
+                            catch { }
                             htThisSocket.Add("Server Certificates", alCerts);
                             continue;
                         }
@@ -424,7 +439,8 @@ namespace FiddlerImportNetlog
                         if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
                         {
                             int iHandshakeMessageType = (int)(double)htParams["type"];
-                            if (iHandshakeMessageType != 13) continue;
+
+                            if (iHandshakeMessageType != 13/*CertificateRequest*/) continue;
 
                             // Okay, it's a CertificateRequest. Log it.
                             string sBase64Bytes = htParams["bytes"] as string;
@@ -515,16 +531,25 @@ namespace FiddlerImportNetlog
                             continue;
                         }
                     }
+
+                    if (htThisSocket.Count > 0)
+                    {
+                        htAllSockets.Add(kvpSocket.Key + sSubjectCNinFirstCert, htThisSocket);
+                    }
                 }
 
-                _listSessions.Add(Session.BuildFromData(false,
-                    new HTTPRequestHeaders(
-                        String.Format("/SECURE_SOCKETS"), // TODO: Add Machine name?
-                        new[] { "Host: NETLOG" }),
-                    Utilities.emptyByteArray,
-                    new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllSockets)),
-                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                // Don't add a node if there were no secure sockets.
+                if (htAllSockets.Count > 0)
+                {
+                    _listSessions.Add(Session.BuildFromData(false,
+                        new HTTPRequestHeaders(
+                            String.Format("/SECURE_SOCKETS"), // TODO: Add Machine name?
+                            new[] { "Host: NETLOG" }),
+                        Utilities.emptyByteArray,
+                        new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllSockets)),
+                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                }
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateSocketListSession failed: " + DescribeExceptionWithStack(e)); }
         }
