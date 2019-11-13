@@ -29,6 +29,7 @@ namespace FiddlerImportNetlog
             public int SEND_QUIC_HEADERS;
             public int SEND_HTTP2_HEADERS;
             public int READ_HEADERS;
+            public int COOKIE_INCLUSION_STATUS;
             public int FILTERED_BYTES_READ;
             public int SEND_BODY;
             public int SSL_CERTIFICATES_RECEIVED;
@@ -129,6 +130,13 @@ namespace FiddlerImportNetlog
             _evtProgressNotifications?.Invoke(null, new ProgressCallbackEventArgs(fPct, sMessage));
         }
 
+        private int getIntValue(object oValue, int iDefault)
+        {
+            if (null == oValue) return iDefault;
+            if (!(oValue is Double)) return iDefault;
+            return (int)(double)oValue;
+        }
+
         public bool ExtractSessionsFromJSON(Hashtable htFile)
         {
             if (!(htFile["constants"] is Hashtable htConstants)) return false;
@@ -143,22 +151,23 @@ namespace FiddlerImportNetlog
             // TODO: These should probably use a convenient wrapper for GetHashtableInt
 
             // Sources
-            NetLogMagics.URL_REQUEST = (int)(double)htSourceTypes["URL_REQUEST"];
-            NetLogMagics.SOCKET = (int)(double)htSourceTypes["SOCKET"];
+            NetLogMagics.URL_REQUEST = getIntValue(htSourceTypes["URL_REQUEST"], -999);
+            NetLogMagics.SOCKET = getIntValue(htSourceTypes["SOCKET"], -998);
 
             #region GetEventTypes
             // HTTP-level Events
-            NetLogMagics.URL_REQUEST_START_JOB = (int)(double)htEventTypes["URL_REQUEST_START_JOB"];
-            NetLogMagics.SEND_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"];
-            NetLogMagics.SEND_QUIC_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"];
-            NetLogMagics.SEND_HTTP2_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"];
-            NetLogMagics.READ_HEADERS = (int)(double)htEventTypes["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"];
-            NetLogMagics.FILTERED_BYTES_READ = (int)(double)htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"];
-            NetLogMagics.SEND_BODY = (int)(double)htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_BODY"];
+            NetLogMagics.URL_REQUEST_START_JOB = getIntValue(htEventTypes["URL_REQUEST_START_JOB"], -997);
+            NetLogMagics.SEND_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"], -996);
+            NetLogMagics.SEND_QUIC_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"], -995);
+            NetLogMagics.SEND_HTTP2_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"], -994);
+            NetLogMagics.READ_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"], -993);
+            NetLogMagics.FILTERED_BYTES_READ = getIntValue(htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"], -992);
+            NetLogMagics.COOKIE_INCLUSION_STATUS = getIntValue(htEventTypes["COOKIE_INCLUSION_STATUS"], -991);
+            NetLogMagics.SEND_BODY = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_BODY"], -990);
 
             // Socket-level Events
-            NetLogMagics.SSL_CERTIFICATES_RECEIVED = (int)(double)htEventTypes["SSL_CERTIFICATES_RECEIVED"];
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = (int)(double)htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"];
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -989);
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -988);
 
             // Get ALL event type names as strings for pretty print view
             dictEventTypes = new Dictionary<int, string>();
@@ -176,7 +185,7 @@ namespace FiddlerImportNetlog
             }
             #endregion
 
-            int iLogVersion = (int)(double)htConstants["logFormatVersion"];
+            int iLogVersion = getIntValue(htConstants["logFormatVersion"], 0);
             NotifyProgress(0, "Found NetLog v" + iLogVersion + ".");
             #endregion LookupConstants
 
@@ -243,7 +252,7 @@ namespace FiddlerImportNetlog
                 ++iEvent;
                 var htSource = htEvent["source"] as Hashtable;
                 if (null == htSource) continue;
-                int iSourceType = (int)(double)htSource["type"];
+                int iSourceType = getIntValue(htSource["type"], -1);
 
                 #region ParseCertificateRequestMessagesAndDumpToLog
                 if (iSourceType == NetLogMagics.SOCKET)
@@ -252,10 +261,10 @@ namespace FiddlerImportNetlog
                     {
                         // All events we care about should have parameters.
                         if (!(htEvent["params"] is Hashtable htParams)) continue;
-                        int iType = (int)(double)htEvent["type"];
+                        int iType = getIntValue(htEvent["type"], -1);
 
                         List<Hashtable> events;
-                        int iSocketID = (int)(double)htSource["id"];
+                        int iSocketID = getIntValue(htSource["id"], -1);
 
                         if (iType != NetLogMagics.SSL_CERTIFICATES_RECEIVED &&
                             iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED) continue;
@@ -282,7 +291,7 @@ namespace FiddlerImportNetlog
                 // Collect only events related to URL_REQUESTS.
                 if (iSourceType != NetLogMagics.URL_REQUEST) continue;
 
-                int iURLRequestID = (int)(double)htSource["id"];
+                int iURLRequestID = getIntValue(htSource["id"], -1);
 
                 {
                     List<Hashtable> events;
@@ -346,8 +355,12 @@ namespace FiddlerImportNetlog
             try
             {
                 Hashtable htDebug = new Hashtable();
+
                 foreach (KeyValuePair<int, List<Hashtable>> kvpURLRequest in dictURLRequests)
                 {
+                    // Store off the likely initial URL for this URL Request
+                    string sUrl = String.Empty;
+
                     // Remove data we're unlikely to need, and replace magics with constant strings.
                     foreach (Hashtable ht in kvpURLRequest.Value)
                     {
@@ -357,11 +370,15 @@ namespace FiddlerImportNetlog
                         try
                         {
                             // Replace Event type integers with names.
-                            int iType = (int)(double)ht["type"];
+                            int iType = getIntValue(ht["type"], -1);
                             ht["type"] = dictEventTypes[iType];
 
+                            if (iType == NetLogMagics.URL_REQUEST_START_JOB) {
+                                sUrl = ((string)(ht["params"] as Hashtable)?["url"] ?? sUrl);
+                            }
+
                             // Replace Event phase integers with names.
-                            int iPhase = (int)(double)ht["phase"];
+                            int iPhase = getIntValue(ht["phase"], -1);
                             ht["phase"] = (iPhase == 1) ? "BEGIN" : (iPhase == 2) ? "END" : "NONE";
 
                             // Replace NetError integers with names.
@@ -380,7 +397,8 @@ namespace FiddlerImportNetlog
 
                     // Copy List<Hashtable> to ArrayList, which is the only type the serializer understands.
                     ArrayList alE = new ArrayList(kvpURLRequest.Value);
-                    htDebug.Add(kvpURLRequest.Key, alE);
+
+                    htDebug.Add(String.Format("{0} - {1}", kvpURLRequest.Key, sUrl), alE);
                 }
 
                 if (htDebug.Count > 0)
@@ -410,7 +428,7 @@ namespace FiddlerImportNetlog
 
                     foreach (Hashtable htEvent in kvpSocket.Value)
                     {
-                        int iType = (int)(double)htEvent["type"];
+                        int iType = getIntValue(htEvent["type"], -1);
                         var htParams = (Hashtable) htEvent["params"];
 
                         if (iType == NetLogMagics.SSL_CERTIFICATES_RECEIVED)
@@ -438,7 +456,7 @@ namespace FiddlerImportNetlog
                         // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60(SSL_HANDSHAKE_MESSAGE_RECEIVED)})
                         if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
                         {
-                            int iHandshakeMessageType = (int)(double)htParams["type"];
+                            int iHandshakeMessageType = getIntValue(htParams["type"], -1);
 
                             if (iHandshakeMessageType != 13/*CertificateRequest*/) continue;
 
@@ -617,6 +635,9 @@ namespace FiddlerImportNetlog
             HTTPResponseHeaders oRPH = null;
             MemoryStream msResponseBody = new MemoryStream();
             Dictionary<string, string> dictSessionFlags = new Dictionary<string, string>();
+            List<string> listCookieSendExclusions = new List<string>();
+            List<string> listCookieSetExclusions = new List<string>();
+
             string sURL = String.Empty;
             string sMethod = "GET";
             SessionTimers oTimers = new SessionTimers();
@@ -628,7 +649,7 @@ namespace FiddlerImportNetlog
             {
                 try
                 {
-                    int iType = (int)(double)htEvent["type"];
+                    int iType = getIntValue(htEvent["type"], -1);
                     var htParams = htEvent["params"] as Hashtable;
 
                     // All events we care about should have parameters.
@@ -644,8 +665,13 @@ namespace FiddlerImportNetlog
                             //
                             // TODO: This is really hacky right now.
                             FiddlerApplication.Log.LogFormat("Got more than one start job on the URLRequest for {0}", sURL);
+                            AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
                             BuildAndAddSession(ref oSF, ref oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
                             oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); sURL = String.Empty; sMethod = "GET"; oTimers = new SessionTimers();
+
+                            listCookieSetExclusions.Clear();
+                            listCookieSendExclusions.Clear();
+                            // ISSUE: There are probably some dictSessionFlags values that should be cleared here.
                         }
 
                         bHasStartJob = true;
@@ -667,6 +693,7 @@ namespace FiddlerImportNetlog
                         {
                             string sRequest = sMethod + " " + sURL + " HTTP/1.1\r\n" + String.Join("\r\n", alHeaderLines.Cast<string>().ToArray());
                             oRQH = Fiddler.Parser.ParseRequest(sRequest);
+                            AnnotateHeadersWithUnsentCookies(oRQH, listCookieSendExclusions);
                         }
                         continue;
                     }
@@ -679,6 +706,7 @@ namespace FiddlerImportNetlog
                         if (!String.IsNullOrEmpty(sRequest))
                         {
                             oRQH = Fiddler.Parser.ParseRequest(sRequest);
+                            AnnotateHeadersWithUnsentCookies(oRQH, listCookieSendExclusions);
                         }
                         continue;
                     }
@@ -691,13 +719,49 @@ namespace FiddlerImportNetlog
                         if (!String.IsNullOrEmpty(sRequest))
                         {
                             oRQH = Fiddler.Parser.ParseRequest(sRequest);
+                            AnnotateHeadersWithUnsentCookies(oRQH, listCookieSendExclusions);
                         }
+                        continue;
+                    }
+
+                    if (iType == NetLogMagics.COOKIE_INCLUSION_STATUS)
+                    {
+                        string sCookieName = (htParams["name"] as string) ?? "(name-unavailable)";
+                        string sOperation = (htParams["operation"] as string) ?? String.Empty;
+                        string sExclusionReasons = (htParams["exclusion_reason"] as string) ?? String.Empty;
+                        // {"params":
+                        //   { "exclusion_reason":"EXCLUDE_SAMESITE_LAX, DO_NOT_WARN", "name"="foo", "operation"="store"},
+                        // "source":{"id":3431,"type":1}
+                        // "COOKIE_INCLUSION_STATUS":411
+
+                        // See |ExclusionReason| list in https://cs.chromium.org/chromium/src/net/cookies/canonical_cookie.h?type=cs&q=EXCLUDE_SAMESITE_LAX&sq=package:chromium&g=0&l=304
+                        // EXCLUDE_HTTP_ONLY, EXCLUDE_SECURE_ONLY,EXCLUDE_DOMAIN_MISMATCH,EXCLUDE_NOT_ON_PATH,EXCLUDE_INVALID_PREFIX
+                        // EXCLUDE_SAMESITE_STRICT,EXCLUDE_SAMESITE_LAX,EXCLUDE_SAMESITE_EXTENDED,
+                        // EXCLUDE_SAMESITE_UNSPECIFIED_TREATED_AS_LAX,EXCLUDE_SAMESITE_NONE_INSECURE,
+                        // EXCLUDE_USER_PREFERENCES,
+
+                        if ("store" == sOperation)
+                        {
+                            // EXCLUDE_INVALID_DOMAIN,EXCLUDE_OVERWRITE_HTTP_ONLY,EXCLUDE_OVERWRITE_SECURE,EXCLUDE_FAILURE_TO_STORE,EXCLUDE_NONCOOKIEABLE_SCHEME
+                            // EXCLUDE_INVALID_PREFIX
+                            listCookieSetExclusions.Add(String.Format("Blocked set of '{0}' due to '{1}'", sCookieName, sExclusionReasons));
+                        }
+                        else if ("send" == sOperation)
+                        {
+                            // Don't warn about cookies which are obviously inapplicable
+                            if (!new string[] { "EXCLUDE_DOMAIN_MISMATCH", "EXCLUDE_NOT_ON_PATH" }.Any(s => sExclusionReasons.Contains(s)))
+                            {
+                                listCookieSendExclusions.Add(String.Format("Blocked send of '{0}' due to '{1}'", sCookieName, sExclusionReasons));
+                            }
+                        }
+                        else { Debug.Assert(false, "Unknown operation"); }
+
                         continue;
                     }
 
                     if (iType == NetLogMagics.SEND_BODY)
                     {
-                        int iBodyLength = (int)(double)htParams["length"];
+                        int iBodyLength = getIntValue(htParams["length"], 0);
                         if (iBodyLength > 0)
                         {
                             oSF |= SessionFlags.RequestBodyDropped;
@@ -718,7 +782,7 @@ namespace FiddlerImportNetlog
                         continue;
                     }
 
-                    // ISSUE: WHAT ABOUT  "URL_REQUEST_JOB_BYTES_READ" BYTES? DONT WANT DUPLICATES.
+                    // ISSUE: WHAT ABOUT "URL_REQUEST_JOB_BYTES_READ" BYTES? DONT WANT DUPLICATES.
 
                     if (iType == NetLogMagics.FILTERED_BYTES_READ)
                     {
@@ -730,7 +794,7 @@ namespace FiddlerImportNetlog
                         }
                         else
                         {
-                            cbDroppedResponseBody += (int)(double)htParams["byte_count"];
+                            cbDroppedResponseBody += getIntValue(htParams["byte_count"], 0);
                         }
                         continue;
                     }
@@ -742,7 +806,29 @@ namespace FiddlerImportNetlog
                 #endregion ParseImportantEvents
             }
 
+            AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
             BuildAndAddSession(ref oSF, ref oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
+        }
+
+        private static void AnnotateHeadersWithUnsentCookies(HTTPRequestHeaders oRQH, List<string> listExclusions)
+        {
+            if (null == oRQH) return;
+            foreach (string sExclusion in listExclusions) {
+                oRQH.Add("$NETLOG-CookieNotSent", sExclusion);
+            }
+
+            listExclusions.Clear();
+        }
+
+        private static void AnnotateHeadersWithUnstoredCookies(HTTPResponseHeaders oRPH, List<string> listExclusions)
+        {
+            if (null == oRPH) return;
+            foreach (string sExclusion in listExclusions)
+            {
+                oRPH.Add("$NETLOG-CookieNotSet", sExclusion);
+            }
+
+            listExclusions.Clear();
         }
 
         private void BuildAndAddSession(ref SessionFlags oSF, ref HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody, 
