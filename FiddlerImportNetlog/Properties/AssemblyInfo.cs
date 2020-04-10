@@ -6,8 +6,14 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2019 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.2.1.0")]              // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute to match!
+[assembly: AssemblyVersion("1.2.3.0")]              // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
+
+// v1.2.3
+// Add |traffic_annotation| to session properties
+
+// v1.2.2
+// Update Cookie Inclusion reasons to match latest CL 81.0.3993 https://chromium-review.googlesource.com/c/chromium/src/+/1960865
 
 // v1.2.1
 // Add Cookie Exclusion warnings

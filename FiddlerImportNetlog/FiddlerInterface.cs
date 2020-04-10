@@ -8,7 +8,7 @@ using System.IO.Compression;
 
 namespace FiddlerImportNetlog
 {
-    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.2.1). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
+    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.2.3). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
     public class HTTPArchiveFormatImport : ISessionImporter
     {
         public Session[] ImportSessions(string sFormat, Dictionary<string, object> dictOptions, EventHandler<Fiddler.ProgressCallbackEventArgs> evtProgressNotifications)
@@ -46,7 +46,7 @@ namespace FiddlerImportNetlog
                         oSR = new StreamReader(strmContent);
                     }
                     else
-                    {                        
+                    {
                         Stream oFS = File.OpenRead(sFilename);
 
                         // Check to see if this file data was GZIP'd or PKZIP'd.
@@ -108,7 +108,7 @@ namespace FiddlerImportNetlog
             long fileLength = oFS.Length;
             if (fileLength > Int32.MaxValue)
                 throw new IOException("file over 2gb");
-            
+
             int index = 0;
             int count = (int)fileLength;
             byte[] bytes = new byte[count];

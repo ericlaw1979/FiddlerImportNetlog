@@ -24,6 +24,7 @@ namespace FiddlerImportNetlog
             public int SOCKET;
 
             // Events
+            public int REQUEST_ALIVE;
             public int URL_REQUEST_START_JOB;
             public int SEND_HEADERS;
             public int SEND_QUIC_HEADERS;
@@ -72,7 +73,7 @@ namespace FiddlerImportNetlog
             }
             return alOut;
         }
-        
+
         private static DateTime GetTimeStamp(object o, long baseTime)
         {
             long t = baseTime;
@@ -115,7 +116,7 @@ namespace FiddlerImportNetlog
                 FiddlerApplication.DoNotifyUser("This JSON file does not seem to contain NetLog data.", "Unexpected Data");
                 Session sessFile = Session.BuildFromData(false,
                     new HTTPRequestHeaders(
-                        String.Format("/file.json"), 
+                        String.Format("/file.json"),
                         new[] { "Host: IMPORTED", "Date: " + DateTime.UtcNow.ToString() }),
                     Utilities.emptyByteArray,
                     new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
@@ -156,6 +157,7 @@ namespace FiddlerImportNetlog
 
             #region GetEventTypes
             // HTTP-level Events
+            NetLogMagics.REQUEST_ALIVE = getIntValue(htEventTypes["REQUEST_ALIVE"], -987);
             NetLogMagics.URL_REQUEST_START_JOB = getIntValue(htEventTypes["URL_REQUEST_START_JOB"], -997);
             NetLogMagics.SEND_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"], -996);
             NetLogMagics.SEND_QUIC_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"], -995);
@@ -231,7 +233,7 @@ namespace FiddlerImportNetlog
 
                 _listSessions.Add(Session.BuildFromData(false,
                         new HTTPRequestHeaders(
-                            String.Format("/Enabled_Extensions"), // TODO: Add Machine name?
+                            String.Format("/ENABLED_EXTENSIONS"), // TODO: Add Machine name?
                             new[] { "Host: NETLOG" }),
                         Utilities.emptyByteArray,
                         new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
@@ -610,7 +612,7 @@ namespace FiddlerImportNetlog
             int iRequest = 0;
             iLastPct = 75;
 
-            // Iterate over each URLRequest's events bucket and parse one or more Sessions out of it. 
+            // Iterate over each URLRequest's events bucket and parse one or more Sessions out of it.
             foreach (KeyValuePair<int, List<Hashtable>> kvpUR in dictURLRequests)
             {
                 ++iRequest;
@@ -640,6 +642,7 @@ namespace FiddlerImportNetlog
 
             string sURL = String.Empty;
             string sMethod = "GET";
+            string sTrafficAnnotation = String.Empty;
             SessionTimers oTimers = new SessionTimers();
 
             int cbDroppedResponseBody = 0;
@@ -657,6 +660,11 @@ namespace FiddlerImportNetlog
 
                     #region ParseImportantEvents
                     // C# cannot |switch()| on non-constant case values. Hrmph.
+                    if (iType == NetLogMagics.REQUEST_ALIVE)
+                    {
+                        sTrafficAnnotation = getIntValue(htParams["traffic_annotation"], 0).ToString();
+                        continue;
+                    }
                     if (iType == NetLogMagics.URL_REQUEST_START_JOB)
                     {
                         if (bHasStartJob)
@@ -679,6 +687,7 @@ namespace FiddlerImportNetlog
                         sMethod = (string)htParams["method"];
                         dictSessionFlags["X-Netlog-URLRequest-ID"] = kvpUR.Key.ToString();
                         dictSessionFlags["X-ProcessInfo"] = String.Format("{0}:0", sClient);
+                        dictSessionFlags["X-Netlog-Traffic_Annotation"] = sTrafficAnnotation;
 
                         // In case we don't get these later.
                         oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);
@@ -726,13 +735,19 @@ namespace FiddlerImportNetlog
 
                     if (iType == NetLogMagics.COOKIE_INCLUSION_STATUS)
                     {
-                        string sCookieName = (htParams["name"] as string) ?? "(name-unavailable)";
                         string sOperation = (htParams["operation"] as string) ?? String.Empty;
-                        string sExclusionReasons = (htParams["exclusion_reason"] as string) ?? String.Empty;
-                        // {"params":
-                        //   { "exclusion_reason":"EXCLUDE_SAMESITE_LAX, DO_NOT_WARN", "name"="foo", "operation"="store"},
-                        // "source":{"id":3431,"type":1}
-                        // "COOKIE_INCLUSION_STATUS":411
+                        string sCookieName = (htParams["name"] as string) ?? "(name-unavailable)";
+                        // TODO: As of Chrome 81, CookieInclusionStatusNetLogParams also adds |domain| and |path| attributes available if "sensitive" data is included.
+
+                        // In Chrome 81.3993, the |exclusion_reason| field was renamed to |status| because the |cookie_inclusion_status| entries are
+                        // now also emitted for included cookies.
+                        string sExclusionReasons = (htParams["exclusion_reason"] as string);
+                        if (String.IsNullOrEmpty(sExclusionReasons)) sExclusionReasons = (htParams["status"] as string) ?? String.Empty;
+
+                        // If the log indicates that the cookie was included, just skip it for now.
+                        // TODO: Offer a richer cookie-debugging story that exposes the domain/path/and inclusion status.
+                        // https://source.chromium.org/chromium/chromium/src/+/master:net/cookies/canonical_cookie.cc;l=899?q=GetDebugString%20cookie&ss=chromium&originalUrl=https:%2F%2Fcs.chromium.org%2F
+                        if (sExclusionReasons.OICContains("include")) continue;
 
                         // See |ExclusionReason| list in https://cs.chromium.org/chromium/src/net/cookies/canonical_cookie.h?type=cs&q=EXCLUDE_SAMESITE_LAX&sq=package:chromium&g=0&l=304
                         // EXCLUDE_HTTP_ONLY, EXCLUDE_SECURE_ONLY,EXCLUDE_DOMAIN_MISMATCH,EXCLUDE_NOT_ON_PATH,EXCLUDE_INVALID_PREFIX
@@ -831,7 +846,7 @@ namespace FiddlerImportNetlog
             listExclusions.Clear();
         }
 
-        private void BuildAndAddSession(ref SessionFlags oSF, ref HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody, 
+        private void BuildAndAddSession(ref SessionFlags oSF, ref HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody,
                                         Dictionary<string, string> dictSessionFlags, string sURL, string sMethod, SessionTimers oTimers, int cbDroppedResponseBody)
         {
             // TODO: Sanity-check missing headers.
