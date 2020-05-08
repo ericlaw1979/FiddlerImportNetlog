@@ -33,6 +33,7 @@ namespace FiddlerImportNetlog
             public int COOKIE_INCLUSION_STATUS;
             public int FILTERED_BYTES_READ;
             public int SEND_BODY;
+            public int SEND_REQUEST;
             public int SSL_CERTIFICATES_RECEIVED;
             public int SSL_HANDSHAKE_MESSAGE_RECEIVED;
         }
@@ -76,6 +77,7 @@ namespace FiddlerImportNetlog
 
         private static DateTime GetTimeStamp(object o, long baseTime)
         {
+            // TODO: Something sane if o is null
             long t = baseTime;
             if (o is string)
             {
@@ -166,10 +168,11 @@ namespace FiddlerImportNetlog
             NetLogMagics.FILTERED_BYTES_READ = getIntValue(htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"], -992);
             NetLogMagics.COOKIE_INCLUSION_STATUS = getIntValue(htEventTypes["COOKIE_INCLUSION_STATUS"], -991);
             NetLogMagics.SEND_BODY = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_BODY"], -990);
+            NetLogMagics.SEND_REQUEST = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST"], -989);
 
             // Socket-level Events
-            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -989);
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -988);
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -988);
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -987);
 
             // Get ALL event type names as strings for pretty print view
             dictEventTypes = new Dictionary<int, string>();
@@ -605,6 +608,7 @@ namespace FiddlerImportNetlog
             }
             return String.Format("{0}_{1}", sHash, sSig);
         }
+
         private int GenerateSessionsFromURLRequests(Dictionary<int, List<Hashtable>> dictURLRequests)
         {
             int cURLRequests = dictURLRequests.Count;
@@ -628,6 +632,8 @@ namespace FiddlerImportNetlog
             return iLastPct;
         }
 
+        // Each bucket contains all of the events associated with a URL_REQUEST, and each URL_REQUEST may contain
+        // one or more (Auth, Redirects) Web Sessions.
         private void ParseSessionsFromBucket(KeyValuePair<int, List<Hashtable>> kvpUR)
         {
             List<Hashtable> listEvents = kvpUR.Value;
@@ -647,6 +653,7 @@ namespace FiddlerImportNetlog
 
             int cbDroppedResponseBody = 0;
             bool bHasStartJob = false;
+            bool bHasSendRequest = false;
 
             foreach (Hashtable htEvent in listEvents)
             {
@@ -655,8 +662,10 @@ namespace FiddlerImportNetlog
                     int iType = getIntValue(htEvent["type"], -1);
                     var htParams = htEvent["params"] as Hashtable;
 
-                    // All events we care about should have parameters.
-                    if (null == htParams) continue;
+                    // Most events we care about should have parameters.  LANDMINE_MEME HERE
+                    if (iType != NetLogMagics.SEND_REQUEST && null == htParams) continue;
+
+                    // FiddlerApplication.Log.LogFormat("URLRequest#{0} - Event type: {1} - {2}", kvpUR.Key, iType, sURL);
 
                     #region ParseImportantEvents
                     // C# cannot |switch()| on non-constant case values. Hrmph.
@@ -665,16 +674,17 @@ namespace FiddlerImportNetlog
                         sTrafficAnnotation = getIntValue(htParams["traffic_annotation"], 0).ToString();
                         continue;
                     }
+
                     if (iType == NetLogMagics.URL_REQUEST_START_JOB)
                     {
+                        // If we already had a URL_REQUEST_START_JOB on this URL_REQUEST, we are probably chasing a redirect.
+                        // "finish" off the existing Session and start a new one at this point.
+                        // TODO: This is really hacky right now.
                         if (bHasStartJob)
                         {
-                            // "finish" off the existing Session and start a new one at this point.
-                            //
-                            // TODO: This is really hacky right now.
-                            FiddlerApplication.Log.LogFormat("Got more than one start job on the URLRequest for {0}", sURL);
+                            FiddlerApplication.Log.LogFormat("Got more than one START_JOB on the URLRequest for {0}", sURL);
                             AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
-                            BuildAndAddSession(ref oSF, ref oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
+                            BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
                             oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); sURL = String.Empty; sMethod = "GET"; oTimers = new SessionTimers();
 
                             listCookieSetExclusions.Clear();
@@ -691,6 +701,31 @@ namespace FiddlerImportNetlog
 
                         // In case we don't get these later.
                         oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);
+                        continue;
+                    }
+
+                    if (iType == NetLogMagics.SEND_REQUEST)
+                    {
+                        // Only look for "BEGIN" events.
+                        if (getIntValue(htEvent["phase"], -1) != 1) continue;
+
+                        // If we already had a SEND_REQUEST on this URL_REQUEST, we are probably in a HTTP Auth transaction.
+                        // "finish" off the existing Session and start a new one at this point.
+                        // TODO: This is really hacky right now.
+                        if (bHasSendRequest)
+                        {
+                            FiddlerApplication.Log.LogFormat("Got more than one SendRequest on the URLRequest for {0}", sURL);
+                            AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
+                            BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
+                            // Keep sURL and sMethod, they shouldn't be changing.
+                            oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); oTimers = new SessionTimers();
+
+                            listCookieSetExclusions.Clear();
+                            listCookieSendExclusions.Clear();
+                            // ISSUE: There are probably some dictSessionFlags values that should be cleared here.
+                        }
+
+                        bHasSendRequest = true;
                         continue;
                     }
 
@@ -822,7 +857,7 @@ namespace FiddlerImportNetlog
             }
 
             AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
-            BuildAndAddSession(ref oSF, ref oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
+            BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
         }
 
         private static void AnnotateHeadersWithUnsentCookies(HTTPRequestHeaders oRQH, List<string> listExclusions)
@@ -846,7 +881,7 @@ namespace FiddlerImportNetlog
             listExclusions.Clear();
         }
 
-        private void BuildAndAddSession(ref SessionFlags oSF, ref HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody,
+        private void BuildAndAddSession(ref SessionFlags oSF, HTTPRequestHeaders oRQH, HTTPResponseHeaders oRPH, MemoryStream msResponseBody,
                                         Dictionary<string, string> dictSessionFlags, string sURL, string sMethod, SessionTimers oTimers, int cbDroppedResponseBody)
         {
             // TODO: Sanity-check missing headers.
@@ -885,6 +920,7 @@ namespace FiddlerImportNetlog
             oS.Timers = oTimers;
 
             _listSessions.Add(oS);
+            // FiddlerApplication.Log.LogFormat("Added Session #{0}", oS.id);
         }
 
         // Chrome annoyingly uses both Hashtables (JS Object) and Arraylists (JS Array) to represent headers

@@ -6,8 +6,11 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2019 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.2.3.0")]              // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute to match!
+[assembly: AssemblyVersion("1.2.4.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
+
+// v1.2.4
+// Better parse HTTP Auth where there are multiple SendRequests
 
 // v1.2.3
 // Add |traffic_annotation| to session properties
