@@ -682,11 +682,12 @@ namespace FiddlerImportNetlog
                         // TODO: This is really hacky right now.
                         if (bHasStartJob)
                         {
-                            FiddlerApplication.Log.LogFormat("Got more than one START_JOB on the URLRequest for {0}", sURL);
+                            FiddlerApplication.Log.LogFormat("Got more than one START_JOB on URLRequest #{0} for {1}", kvpUR.Key, sURL);
                             AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
                             BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
                             oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); sURL = String.Empty; sMethod = "GET"; oTimers = new SessionTimers();
-
+                            // We are effectively on a new request, don't act like we've seen headers for it before.
+                            bHasSendRequest = false;
                             listCookieSetExclusions.Clear();
                             listCookieSendExclusions.Clear();
                             // ISSUE: There are probably some dictSessionFlags values that should be cleared here.
@@ -780,7 +781,7 @@ namespace FiddlerImportNetlog
                         if (String.IsNullOrEmpty(sExclusionReasons)) sExclusionReasons = (htParams["status"] as string) ?? String.Empty;
 
                         // If the log indicates that the cookie was included, just skip it for now.
-                        // TODO: Offer a richer cookie-debugging story that exposes the domain/path/and inclusion status.
+                        // TODO: Offer a richer cookie-debugging story that exposes the domain/path/inclusion status.
                         // https://source.chromium.org/chromium/chromium/src/+/master:net/cookies/canonical_cookie.cc;l=899?q=GetDebugString%20cookie&ss=chromium&originalUrl=https:%2F%2Fcs.chromium.org%2F
                         if (sExclusionReasons.OICContains("include")) continue;
 
@@ -910,6 +911,12 @@ namespace FiddlerImportNetlog
                 msResponseBody.ToArray(),
                 oSF);
 
+            // Store the URL from the URLRequest here, because it might have a URL Fragment in it, and the URL built
+            // out of the headers definitely should not.
+            if (oS.fullUrl != sURL) {
+                oS["X-Netlog-URLRequest-URL"] = sURL;
+            }
+
             // Attach the SessionFlags to the new Session.
             foreach (KeyValuePair<string, string> sFlag in dictSessionFlags)
             {
@@ -929,6 +936,7 @@ namespace FiddlerImportNetlog
         {
             if (o is ArrayList) return HeaderArrayToHeaderString((ArrayList)o);
             if (o is Hashtable) return HeaderHashtableToHeaderString((Hashtable)o);
+            if (null != o) Debug.Assert(false, "Unexpected header format");
             return String.Empty;
         }
 
