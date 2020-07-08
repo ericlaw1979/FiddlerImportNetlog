@@ -773,6 +773,11 @@ namespace FiddlerImportNetlog
                     {
                         string sOperation = (htParams["operation"] as string) ?? String.Empty;
                         string sCookieName = (htParams["name"] as string) ?? "(name-unavailable)";
+
+                        // Edge-specific fields
+                        // bool bIsLegacyCookie = (htParams["msft_browser_legacy_cookie"] as Boolean) ?? false;
+                        // string bBrowserProvenance = (htParams["browser_provenance"] as string) ?? String.Empty /*Native*/;
+
                         // TODO: As of Chrome 81, CookieInclusionStatusNetLogParams also adds |domain| and |path| attributes available if "sensitive" data is included.
 
                         // In Chrome 81.3993, the |exclusion_reason| field was renamed to |status| because the |cookie_inclusion_status| entries are
