@@ -150,6 +150,7 @@ namespace FiddlerImportNetlog
             Hashtable htEventTypes = htConstants["logEventTypes"] as Hashtable;
             Hashtable htNetErrors = htConstants["netError"] as Hashtable;
             Hashtable htSourceTypes = htConstants["logSourceType"] as Hashtable;
+            string sDetailLevel = htConstants["logCaptureMode"] as string;
 
             // TODO: These should probably use a convenient wrapper for GetHashtableInt
 
@@ -330,6 +331,7 @@ namespace FiddlerImportNetlog
             iLastPct = GenerateSessionsFromURLRequests(dictURLRequests);
 
             StringBuilder sbClientInfo = new StringBuilder();
+            sbClientInfo.AppendFormat("Sensitivity:\t{0}\n", sDetailLevel);
             sbClientInfo.AppendFormat("Client:\t\t{0} v{1}\n", sClient, htClientInfo["version"]);
             sbClientInfo.AppendFormat("Channel:\t\t{0}\n", htClientInfo["version_mod"]);
             sbClientInfo.AppendFormat("Commit Hash:\t{0}\n", htClientInfo["cl"]);
@@ -337,7 +339,7 @@ namespace FiddlerImportNetlog
 
             sbClientInfo.AppendFormat("\nCommandLine:\t{0}\n\n", htClientInfo["command_line"]);
             sbClientInfo.AppendFormat("Capture started:\t{0}\n", dtBase);
-            sbClientInfo.AppendFormat("URLRequests:\t{0} found.\n", cURLRequests);
+            sbClientInfo.AppendFormat("URLRequests:\t\t{0} found.\n", cURLRequests);
 
             sessSummary.utilSetResponseBody(sbClientInfo.ToString());
 
