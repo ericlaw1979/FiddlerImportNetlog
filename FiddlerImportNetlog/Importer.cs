@@ -648,9 +648,11 @@ namespace FiddlerImportNetlog
             List<string> listCookieSendExclusions = new List<string>();
             List<string> listCookieSetExclusions = new List<string>();
 
+            dictSessionFlags["X-Netlog-URLRequest-ID"] = kvpUR.Key.ToString();
+            dictSessionFlags["X-ProcessInfo"] = String.Format("{0}:0", sClient);
+
             string sURL = String.Empty;
             string sMethod = "GET";
-            string sTrafficAnnotation = String.Empty;
             SessionTimers oTimers = new SessionTimers();
 
             int cbDroppedResponseBody = 0;
@@ -673,7 +675,20 @@ namespace FiddlerImportNetlog
                     // C# cannot |switch()| on non-constant case values. Hrmph.
                     if (iType == NetLogMagics.REQUEST_ALIVE)
                     {
-                        sTrafficAnnotation = getIntValue(htParams["traffic_annotation"], 0).ToString();
+                        int iTrafficAnnotation = getIntValue(htParams["traffic_annotation"], 0);
+                        if (iTrafficAnnotation > 0)
+                        {
+                            string sAnnotation = iTrafficAnnotation.ToString();
+                            switch (iTrafficAnnotation)
+                            {
+                                // TODO (Bug #3): Lookup a friendly string from https://source.chromium.org/chromium/chromium/src/+/master:tools/traffic_annotation/summary/annotations.xml;l=27?q=101845102&ss=chromium
+                                case 63171670: sAnnotation += "- navigation_url_loader"; break;
+                                case 110815970: sAnnotation += "- resource prefetch"; break;
+                                case 101845102: sAnnotation += "- blink_resource_loader"; break;
+                                case 16469669: sAnnotation += "- background_fetch"; break;
+                            }
+                            dictSessionFlags["X-Netlog-Traffic_Annotation"] = sAnnotation;
+                        }
                         continue;
                     }
 
@@ -698,9 +713,6 @@ namespace FiddlerImportNetlog
                         bHasStartJob = true;
                         sURL = (string)htParams["url"];
                         sMethod = (string)htParams["method"];
-                        dictSessionFlags["X-Netlog-URLRequest-ID"] = kvpUR.Key.ToString();
-                        dictSessionFlags["X-ProcessInfo"] = String.Format("{0}:0", sClient);
-                        dictSessionFlags["X-Netlog-Traffic_Annotation"] = sTrafficAnnotation;
 
                         // In case we don't get these later.
                         oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);

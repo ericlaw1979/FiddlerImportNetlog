@@ -6,8 +6,12 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2020 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.2.5.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.2.6.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
+
+// v1.2.6
+// Record X-Netlog-URLRequest-ID and X-ProcessInfo, even when we don't receive a StartRequest
+// Add mappings for most common traffic_annotation values when writing X-Netlog-Traffic_Annotation
 
 // v1.2.5
 // Record sensitivity level
