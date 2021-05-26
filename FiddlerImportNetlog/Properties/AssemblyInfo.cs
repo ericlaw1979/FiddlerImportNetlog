@@ -3,11 +3,14 @@ using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("FiddlerImportNetlog")]
 [assembly: AssemblyDescription("Import Chromium NetLog events to Fiddler")]
-[assembly: AssemblyCopyright("Copyright ©2020 Eric Lawrence")]
+[assembly: AssemblyCopyright("Copyright ©2021 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.2.6.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.2.7.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
+
+// v1.2.7
+// Flag failed Set-Cookies in Web Sessions list
 
 // v1.2.6
 // Record X-Netlog-URLRequest-ID and X-ProcessInfo, even when we don't receive a StartRequest

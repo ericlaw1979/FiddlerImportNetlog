@@ -708,6 +708,8 @@ namespace FiddlerImportNetlog
                             listCookieSetExclusions.Clear();
                             listCookieSendExclusions.Clear();
                             // ISSUE: There are probably some dictSessionFlags values that should be cleared here.
+                            dictSessionFlags.Remove("ui-comment");
+                            dictSessionFlags.Remove("ui-backcolor");
                         }
 
                         bHasStartJob = true;
@@ -812,8 +814,9 @@ namespace FiddlerImportNetlog
 
                         if ("store" == sOperation)
                         {
-                            // EXCLUDE_INVALID_DOMAIN,EXCLUDE_OVERWRITE_HTTP_ONLY,EXCLUDE_OVERWRITE_SECURE,EXCLUDE_FAILURE_TO_STORE,EXCLUDE_NONCOOKIEABLE_SCHEME
-                            // EXCLUDE_INVALID_PREFIX
+                            // EXCLUDE_INVALID_DOMAIN,EXCLUDE_OVERWRITE_HTTP_ONLY,EXCLUDE_OVERWRITE_SECURE,
+                            // EXCLUDE_FAILURE_TO_STORE (e.g. Set-Cookie header > 4096 characters),
+                            // EXCLUDE_NONCOOKIEABLE_SCHEME,EXCLUDE_INVALID_PREFIX
                             listCookieSetExclusions.Add(String.Format("Blocked set of '{0}' due to '{1}'", sCookieName, sExclusionReasons));
                         }
                         else if ("send" == sOperation)
@@ -876,7 +879,12 @@ namespace FiddlerImportNetlog
                 #endregion ParseImportantEvents
             }
 
-            AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
+            bool bCookieSetFailed = listCookieSetExclusions.Count > 0;
+            if (bCookieSetFailed) {
+                dictSessionFlags["ui-backcolor"] = "#FF8080";
+                dictSessionFlags["ui-comments"] = "A Set-Cookie was ignored";
+                AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
+            }
             BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
         }
 
