@@ -115,17 +115,37 @@ namespace FiddlerImportNetlog
             NotifyProgress(0.25f, "Finished parsing JSON file; took " + oSW.ElapsedMilliseconds + "ms.");
             if (!ExtractSessionsFromJSON(htFile))
             {
-                FiddlerApplication.DoNotifyUser("This JSON file does not seem to contain NetLog data.", "Unexpected Data");
-                Session sessFile = Session.BuildFromData(false,
-                    new HTTPRequestHeaders(
-                        String.Format("/file.json"),
-                        new[] { "Host: IMPORTED", "Date: " + DateTime.UtcNow.ToString() }),
-                    Utilities.emptyByteArray,
-                    new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
-                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
-                listSessions.Insert(0, sessFile);
+                if (!(htFile["traceEvents"] is ArrayList alTraceEvents))
+                {
+                    FiddlerApplication.DoNotifyUser("This JSON file does not seem to contain NetLog data.", "Unexpected Data");
+                    Session sessFile = Session.BuildFromData(false,
+                        new HTTPRequestHeaders(
+                            String.Format("/file.json"),
+                            new[] { "Host: IMPORTED", "Date: " + DateTime.UtcNow.ToString() }),
+                        Utilities.emptyByteArray,
+                        new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
+                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                    listSessions.Insert(0, sessFile);
+                }
+                else
+                {
+                    ExtractSessionsFromTraceJSON(alTraceEvents);
+                }
             }
+        }
+
+        private void ExtractSessionsFromTraceJSON(ArrayList alTraceEvents)
+        {
+            List<Hashtable> listEntries = new List<Hashtable>();
+            foreach (Hashtable htItem in alTraceEvents)
+            {
+                if ((htItem["scope"] as string) =="netlog")
+                {
+                    listEntries.Add(htItem);
+                }
+            }
+            FiddlerApplication.DoNotifyUser("Importer does not yet support Chromium Trace files containing NetLog events. Soon?\n\ncount(entry.scope==netlog) is " + listEntries.Count.ToString(), "NYI - Import Aborted");
         }
 
         private void NotifyProgress(float fPct, string sMessage)
