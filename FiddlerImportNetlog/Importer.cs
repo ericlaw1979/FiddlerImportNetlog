@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -79,13 +80,16 @@ namespace FiddlerImportNetlog
         {
             // TODO: Something sane if o is null
             long t = baseTime;
-            if (o is string)
+            if (null != o)
             {
-                t += Int64.Parse(o as string);
-            }
-            else
-            {
-                t += (long)(double)o;
+                if (o is string)
+                {
+                    t += Int64.Parse(o as string);
+                }
+                else
+                {
+                    t += (long)(double)o;
+                }
             }
             return DateTimeOffset.FromUnixTimeMilliseconds(t).DateTime.ToLocalTime();
         }
@@ -137,15 +141,138 @@ namespace FiddlerImportNetlog
 
         private void ExtractSessionsFromTraceJSON(ArrayList alTraceEvents)
         {
-            List<Hashtable> listEntries = new List<Hashtable>();
+            NetLogMagics.URL_REQUEST = 1;
+            NetLogMagics.SOCKET = 2;
+
+            // Events
+            NetLogMagics.REQUEST_ALIVE = 3;
+            NetLogMagics.URL_REQUEST_START_JOB = 4;
+            NetLogMagics.SEND_HEADERS = 5;
+            NetLogMagics.SEND_QUIC_HEADERS = 6;
+            NetLogMagics.SEND_HTTP2_HEADERS = 7;
+            NetLogMagics.READ_HEADERS = 8;
+            NetLogMagics.COOKIE_INCLUSION_STATUS = 9;
+            NetLogMagics.FILTERED_BYTES_READ = 10;
+            NetLogMagics.SEND_BODY = 11;
+            NetLogMagics.SEND_REQUEST = 12;
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = 13;
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 14;
+
+            List<Hashtable> listEvents = new List<Hashtable>();
             foreach (Hashtable htItem in alTraceEvents)
             {
                 if ((htItem["scope"] as string) =="netlog")
                 {
-                    listEntries.Add(htItem);
+                    listEvents.Add(htItem);
                 }
             }
-            FiddlerApplication.DoNotifyUser("Importer does not yet support Chromium Trace files containing NetLog events. Soon?\n\ncount(entry.scope==netlog) is " + listEntries.Count.ToString(), "NYI - Import Aborted");
+            int iEvent = 0;
+            int iLastPct = 25;
+            var dictURLRequests = new Dictionary<int, List<Hashtable>>();
+            int cEvents = listEvents.Count;
+            foreach (Hashtable htEvent in listEvents)
+            {
+                ++iEvent;
+                var htArgs = htEvent["args"] as Hashtable;
+                if (null == htArgs) continue;
+                //var htParams = htArgs["params"] as Hashtable;
+                //if (null == htParams) continue;
+
+
+                #region ParseCertificateRequestMessagesAndDumpToLog
+                /*
+                if (iSourceType == NetLogMagics.SOCKET)
+                {
+                    try
+                    {
+                        // All events we care about should have parameters.
+                        if (!(htEvent["params"] is Hashtable htParams)) continue;
+                        int iType = getIntValue(htEvent["type"], -1);
+
+                        List<Hashtable> events;
+                        int iSocketID = getIntValue(htSource["id"], -1);
+
+                        if (iType != NetLogMagics.SSL_CERTIFICATES_RECEIVED &&
+                            iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED) continue;
+
+                        // Get (or create) the List of entries for this SOCKET.
+                        if (!dictSecureSockets.ContainsKey(iSocketID))
+                        {
+                            events = new List<Hashtable>();
+                            dictSecureSockets.Add(iSocketID, events);
+                        }
+                        else
+                        {
+                            events = dictSecureSockets[iSocketID];
+                        }
+                        // Add this event to the SOCKET's list.
+                        events.Add(htEvent);
+                    }
+                    catch { }
+
+                    continue;
+                }
+                */
+                #endregion ParseCertificateRequestMessagesAndDumpToLog
+
+                var sSourceType = htArgs["source_type"] as string;
+                if (null == sSourceType) continue;
+                
+                // Collect only events related to URL_REQUESTS.
+                if (sSourceType != "URL_REQUEST") continue;
+
+                var sName = htEvent["name"] as string;
+                if (null == sName) continue;
+
+                int iURLRequestID = getHexValue(htEvent["id"], -1);
+                {
+                    List<Hashtable> events;
+
+                    // Get (or create) the List of entries for this URLRequest.
+                    if (!dictURLRequests.ContainsKey(iURLRequestID))
+                    {
+                        events = new List<Hashtable>();
+                        dictURLRequests.Add(iURLRequestID, events);
+                    }
+                    else
+                    {
+                        events = dictURLRequests[iURLRequestID];
+                    }
+
+                    // Add this event to the URLRequest's list.
+                    events.Add(htEvent);
+                }
+                int iPct = (int)(100 * (0.25f + 0.50f * (iEvent / (float)cEvents)));
+                if (iPct != iLastPct)
+                {
+                    NotifyProgress(iPct / 100f, "Parsed an event for a URLRequest");
+                    iLastPct = iPct;
+                }
+            }
+
+            int cURLRequests = dictURLRequests.Count;
+
+            NotifyProgress(0.75f, "Finished reading event entries, saw " + cURLRequests.ToString() + " URLRequests");
+
+            iLastPct = GenerateSessionsFromURLRequests(dictURLRequests);
+
+         /*   StringBuilder sbClientInfo = new StringBuilder();
+            sbClientInfo.AppendFormat("Sensitivity:\t{0}\n", sDetailLevel);
+            sbClientInfo.AppendFormat("Client:\t\t{0} v{1}\n", sClient, htClientInfo["version"]);
+            sbClientInfo.AppendFormat("Channel:\t\t{0}\n", htClientInfo["version_mod"]);
+            sbClientInfo.AppendFormat("Commit Hash:\t{0}\n", htClientInfo["cl"]);
+            sbClientInfo.AppendFormat("OS:\t\t{0}\n", htClientInfo["os_type"]);
+
+            sbClientInfo.AppendFormat("\nCommandLine:\t{0}\n\n", htClientInfo["command_line"]);
+            sbClientInfo.AppendFormat("Capture started:\t{0}\n", dtBase);
+            sbClientInfo.AppendFormat("URLRequests:\t\t{0} found.\n", cURLRequests);
+
+            sessSummary.utilSetResponseBody(sbClientInfo.ToString());*/
+
+            //GenerateDebugTreeSession(dictURLRequests);
+            //GenerateSocketListSession(dictSecureSockets);
+
+            NotifyProgress(1, "Import Completed.");
         }
 
         private void NotifyProgress(float fPct, string sMessage)
@@ -158,6 +285,21 @@ namespace FiddlerImportNetlog
             if (null == oValue) return iDefault;
             if (!(oValue is Double)) return iDefault;
             return (int)(double)oValue;
+        }
+        private int getHexValue(object oValue, int iDefault)
+        {
+            if (null == oValue) return iDefault;
+            string sHexValue = oValue as String;
+            if (String.IsNullOrEmpty(sHexValue)) return iDefault;
+            try
+            {
+                int result = Convert.ToInt32(sHexValue, 16);
+                return result;
+            } 
+            catch
+            {
+                return iDefault;
+            }
         }
 
         public bool ExtractSessionsFromJSON(Hashtable htFile)
@@ -684,12 +826,38 @@ namespace FiddlerImportNetlog
                 try
                 {
                     int iType = getIntValue(htEvent["type"], -1);
+
+                    if (iType == -1)
+                    {
+                        string sType = (htEvent["name"] as String);
+                        switch (sType) {
+                            case "REQUEST_ALIVE": iType = NetLogMagics.REQUEST_ALIVE; break;
+                            case "URL_REQUEST_START_JOB": iType = NetLogMagics.URL_REQUEST_START_JOB; break;
+                            case "HTTP_TRANSACTION_SEND_REQUEST_HEADERS": iType = NetLogMagics.SEND_HEADERS; break;
+                            case "HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS": iType = NetLogMagics.SEND_QUIC_HEADERS; break;
+                            case "HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS": iType = NetLogMagics.SEND_HTTP2_HEADERS; break;
+                            case "HTTP_TRANSACTION_READ_RESPONSE_HEADERS": iType = NetLogMagics.READ_HEADERS; break;
+                            case "URL_REQUEST_JOB_FILTERED_BYTES_READ": iType = NetLogMagics.FILTERED_BYTES_READ; break;
+                            case "COOKIE_INCLUSION_STATUS": iType = NetLogMagics.COOKIE_INCLUSION_STATUS; break;
+                            case "HTTP_TRANSACTION_SEND_REQUEST_BODY": iType = NetLogMagics.SEND_BODY; break;
+                            case "HTTP_TRANSACTION_SEND_REQUEST": iType = NetLogMagics.SEND_REQUEST; break;
+                            case "SSL_CERTIFICATES_RECEIVED": iType = NetLogMagics.SSL_CERTIFICATES_RECEIVED; break;
+                            case "SSL_HANDSHAKE_MESSAGE_RECEIVED": iType = NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED; break;
+                        }
+                    }
+
                     var htParams = htEvent["params"] as Hashtable;
+                    if (null == htParams)
+                    {
+                        // The "Trace" format nests the params object inside an args object.
+                        var htArgs = htEvent["args"] as Hashtable;
+                        if (null != htArgs) htParams = htArgs["params"] as Hashtable;
+                    }
 
                     // Most events we care about should have parameters.  LANDMINE_MEME HERE
                     if (iType != NetLogMagics.SEND_REQUEST && null == htParams) continue;
 
-                    // FiddlerApplication.Log.LogFormat("URLRequest#{0} - Event type: {1} - {2}", kvpUR.Key, iType, sURL);
+                    FiddlerApplication.Log.LogFormat("URLRequest#{0} - Event type: {1} - {2}", kvpUR.Key, iType, sURL);
 
                     #region ParseImportantEvents
                     // C# cannot |switch()| on non-constant case values. Hrmph.
@@ -744,7 +912,8 @@ namespace FiddlerImportNetlog
                     if (iType == NetLogMagics.SEND_REQUEST)
                     {
                         // Only look for "BEGIN" events.
-                        if (getIntValue(htEvent["phase"], -1) != 1) continue;
+                        if ((getIntValue(htEvent["phase"], -1) != 1) &&
+                            (htEvent["ph"] as string != "b")) continue;
 
                         // If we already had a SEND_REQUEST on this URL_REQUEST, we are probably in a HTTP Auth transaction.
                         // "finish" off the existing Session and start a new one at this point.

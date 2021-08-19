@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2021 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.2.8.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.3.0.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
 
-// v1.2.8
-// Recognize NetLog events in a Chromium trace file
+// v1.3
+// Support importing NetLog events from a Chromium trace json file
 
 // v1.2.7
 // Flag failed Set-Cookies in Web Sessions list
