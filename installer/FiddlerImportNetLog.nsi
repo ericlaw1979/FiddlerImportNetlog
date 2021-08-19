@@ -1,5 +1,7 @@
 Name "Fiddler FiddlerNetLogImport"
 OutFile "FiddlerImportNetLog.exe"
+Unicode true
+
 Icon "addon.ico"
 
 RequestExecutionLevel "user"
