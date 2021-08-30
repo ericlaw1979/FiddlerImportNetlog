@@ -6,8 +6,27 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2021 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.3.0.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.3.1.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
+
+
+/*
+TODO:
+HTTP_STREAM_JOB has a binding between the request and the socket. Hook them up so we can propagate the connection info to the URL_REQUEST-generated Sessions.
+
+t=3262 [st=0]        SOCKET_POOL_BOUND_TO_SOCKET
+                     --> source_dependency = 1250 (SOCKET)
+t=3262 [st=0]    HTTP_STREAM_JOB_BOUND_TO_REQUEST
+                 --> source_dependency = 1701 (URL_REQUEST)
+*/
+
+// v1.3.1.0
+// Support for FAKE_RESPONSE_HEADERS_CREATED for HSTS and Automatic HTTPS upgrades
+// Add socket address info to generated SOCKETS list's session
+
+// v1.3.0.1
+// Less Log spam
+// Write imported filename to log
 
 // v1.3
 // Support importing NetLog events from a Chromium trace json file

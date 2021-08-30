@@ -31,12 +31,14 @@ namespace FiddlerImportNetlog
             public int SEND_QUIC_HEADERS;
             public int SEND_HTTP2_HEADERS;
             public int READ_HEADERS;
+            public int FAKE_RESPONSE_HEADERS_CREATED;
             public int COOKIE_INCLUSION_STATUS;
             public int FILTERED_BYTES_READ;
             public int SEND_BODY;
             public int SEND_REQUEST;
             public int SSL_CERTIFICATES_RECEIVED;
             public int SSL_HANDSHAKE_MESSAGE_RECEIVED;
+            public int TCP_CONNECT;
         }
 
         internal static string DescribeExceptionWithStack(Exception eX)
@@ -151,12 +153,14 @@ namespace FiddlerImportNetlog
             NetLogMagics.SEND_QUIC_HEADERS = 6;
             NetLogMagics.SEND_HTTP2_HEADERS = 7;
             NetLogMagics.READ_HEADERS = 8;
-            NetLogMagics.COOKIE_INCLUSION_STATUS = 9;
-            NetLogMagics.FILTERED_BYTES_READ = 10;
-            NetLogMagics.SEND_BODY = 11;
-            NetLogMagics.SEND_REQUEST = 12;
-            NetLogMagics.SSL_CERTIFICATES_RECEIVED = 13;
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 14;
+            NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED = 9;
+            NetLogMagics.COOKIE_INCLUSION_STATUS = 10;
+            NetLogMagics.FILTERED_BYTES_READ = 11;
+            NetLogMagics.SEND_BODY = 12;
+            NetLogMagics.SEND_REQUEST = 13;
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = 14;
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 15;
+            NetLogMagics.TCP_CONNECT = 16;
 
             List<Hashtable> listEvents = new List<Hashtable>();
             foreach (Hashtable htItem in alTraceEvents)
@@ -196,14 +200,14 @@ namespace FiddlerImportNetlog
                             iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED) continue;
 
                         // Get (or create) the List of entries for this SOCKET.
-                        if (!dictSecureSockets.ContainsKey(iSocketID))
+                        if (!dictSockets.ContainsKey(iSocketID))
                         {
                             events = new List<Hashtable>();
-                            dictSecureSockets.Add(iSocketID, events);
+                            dictSockets.Add(iSocketID, events);
                         }
                         else
                         {
-                            events = dictSecureSockets[iSocketID];
+                            events = dictSockets[iSocketID];
                         }
                         // Add this event to the SOCKET's list.
                         events.Add(htEvent);
@@ -270,7 +274,7 @@ namespace FiddlerImportNetlog
             sessSummary.utilSetResponseBody(sbClientInfo.ToString());*/
 
             //GenerateDebugTreeSession(dictURLRequests);
-            //GenerateSocketListSession(dictSecureSockets);
+            //GenerateSocketListSession(dictSockets);
 
             NotifyProgress(1, "Import Completed.");
         }
@@ -328,14 +332,16 @@ namespace FiddlerImportNetlog
             NetLogMagics.SEND_QUIC_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"], -995);
             NetLogMagics.SEND_HTTP2_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"], -994);
             NetLogMagics.READ_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"], -993);
-            NetLogMagics.FILTERED_BYTES_READ = getIntValue(htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"], -992);
-            NetLogMagics.COOKIE_INCLUSION_STATUS = getIntValue(htEventTypes["COOKIE_INCLUSION_STATUS"], -991);
-            NetLogMagics.SEND_BODY = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_BODY"], -990);
-            NetLogMagics.SEND_REQUEST = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST"], -989);
+            NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED = getIntValue(htEventTypes["URL_REQUEST_FAKE_RESPONSE_HEADERS_CREATED"], -992);
+            NetLogMagics.FILTERED_BYTES_READ = getIntValue(htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"], -991);
+            NetLogMagics.COOKIE_INCLUSION_STATUS = getIntValue(htEventTypes["COOKIE_INCLUSION_STATUS"], -990);
+            NetLogMagics.SEND_BODY = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_BODY"], -989);
+            NetLogMagics.SEND_REQUEST = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST"], -988);
 
             // Socket-level Events
-            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -988);
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -987);
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -987);
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -986);
+            NetLogMagics.TCP_CONNECT = getIntValue(htEventTypes["TCP_CONNECT"], -987);
 
             // Get ALL event type names as strings for pretty print view
             dictEventTypes = new Dictionary<int, string>();
@@ -410,7 +416,7 @@ namespace FiddlerImportNetlog
             int iEvent = -1;
             int iLastPct = 25;
             var dictURLRequests = new Dictionary<int, List<Hashtable>>();
-            var dictSecureSockets = new Dictionary<int, List<Hashtable>>();
+            var dictSockets = new Dictionary<int, List<Hashtable>>();
 
             // Loop over events; bucket those associated to URLRequests by the source request's ID.
             ArrayList alEvents = htFile["events"] as ArrayList;
@@ -435,17 +441,18 @@ namespace FiddlerImportNetlog
                         int iSocketID = getIntValue(htSource["id"], -1);
 
                         if (iType != NetLogMagics.SSL_CERTIFICATES_RECEIVED &&
-                            iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED) continue;
+                            iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED &&
+                            iType != NetLogMagics.TCP_CONNECT) continue;
 
                         // Get (or create) the List of entries for this SOCKET.
-                        if (!dictSecureSockets.ContainsKey(iSocketID))
+                        if (!dictSockets.ContainsKey(iSocketID))
                         {
                             events = new List<Hashtable>();
-                            dictSecureSockets.Add(iSocketID, events);
+                            dictSockets.Add(iSocketID, events);
                         }
                         else
                         {
-                            events = dictSecureSockets[iSocketID];
+                            events = dictSockets[iSocketID];
                         }
                         // Add this event to the SOCKET's list.
                         events.Add(htEvent);
@@ -506,7 +513,7 @@ namespace FiddlerImportNetlog
             sessSummary.utilSetResponseBody(sbClientInfo.ToString());
 
             GenerateDebugTreeSession(dictURLRequests);
-            GenerateSocketListSession(dictSecureSockets);
+            GenerateSocketListSession(dictSockets);
 
             NotifyProgress(1, "Import Completed.");
             return true;
@@ -599,6 +606,24 @@ namespace FiddlerImportNetlog
                     {
                         int iType = getIntValue(htEvent["type"], -1);
                         var htParams = (Hashtable) htEvent["params"];
+
+                        if (iType == NetLogMagics.TCP_CONNECT)
+                        {
+                            if (htParams.ContainsKey("local_address"))
+                            {
+                                htThisSocket.Add("local_address", htParams["local_address"]);
+                            }
+                            //"remote_address", "local_address", "address_list"
+                            if (htParams.ContainsKey("remote_address"))
+                            {
+                                htThisSocket.Add("remote_address", htParams["remote_address"]);
+                            }
+                            if (htParams.ContainsKey("address_list"))
+                            {
+                                htThisSocket.Add("address_list", htParams["address_list"]);
+                            }
+                            continue;
+                        }
 
                         if (iType == NetLogMagics.SSL_CERTIFICATES_RECEIVED)
                         {
@@ -730,7 +755,7 @@ namespace FiddlerImportNetlog
                 {
                     _listSessions.Add(Session.BuildFromData(false,
                         new HTTPRequestHeaders(
-                            String.Format("/SECURE_SOCKETS"), // TODO: Add Machine name?
+                            String.Format("/SOCKETS"), // TODO: Add Machine name?
                             new[] { "Host: NETLOG" }),
                         Utilities.emptyByteArray,
                         new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
@@ -857,7 +882,7 @@ namespace FiddlerImportNetlog
                     // Most events we care about should have parameters.  LANDMINE_MEME HERE
                     if (iType != NetLogMagics.SEND_REQUEST && null == htParams) continue;
 
-                    FiddlerApplication.Log.LogFormat("URLRequest#{0} - Event type: {1} - {2}", kvpUR.Key, iType, sURL);
+                    // FiddlerApplication.Log.LogFormat("URLRequest#{0} - Event type: {1} - {2}", kvpUR.Key, iType, sURL);
 
                     #region ParseImportantEvents
                     // C# cannot |switch()| on non-constant case values. Hrmph.
@@ -1032,7 +1057,8 @@ namespace FiddlerImportNetlog
                         continue;
                     }
 
-                    if (iType == NetLogMagics.READ_HEADERS)
+                    if ((iType == NetLogMagics.READ_HEADERS) ||
+                        (iType == NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED))
                     {
                         ArrayList alHeaderLines = htParams["headers"] as ArrayList;
                         oTimers.ServerBeginResponse = oTimers.FiddlerGotResponseHeaders = GetTimeStamp(htEvent["time"], baseTime);
