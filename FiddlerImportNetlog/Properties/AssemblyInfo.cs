@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2021 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.3.1.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.3.2.1")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
 
 
@@ -19,6 +19,10 @@ t=3262 [st=0]        SOCKET_POOL_BOUND_TO_SOCKET
 t=3262 [st=0]    HTTP_STREAM_JOB_BOUND_TO_REQUEST
                  --> source_dependency = 1701 (URL_REQUEST)
 */
+
+// v1.3.2.1
+// Add DNS entries to log
+// Add READ_EARLY_HINTS_RESPONSE_HEADERS - _X-NetLog-Found-Early-Hint - https://www.fastly.com/blog/beyond-server-push-experimenting-with-the-103-early-hints-status-code
 
 // v1.3.1.0
 // Support for FAKE_RESPONSE_HEADERS_CREATED for HSTS and Automatic HTTPS upgrades

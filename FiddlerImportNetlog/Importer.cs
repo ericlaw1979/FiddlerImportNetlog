@@ -21,8 +21,10 @@ namespace FiddlerImportNetlog
         struct Magics
         {
             // Sources
-            public int URL_REQUEST;
-            public int SOCKET;
+            public int SRC_NONE;
+            public int SRC_URL_REQUEST;
+            public int SRC_SOCKET;
+            public int SRC_HOST_RESOLVER_IMPL_JOB;
 
             // Events
             public int REQUEST_ALIVE;
@@ -32,6 +34,7 @@ namespace FiddlerImportNetlog
             public int SEND_HTTP2_HEADERS;
             public int READ_HEADERS;
             public int FAKE_RESPONSE_HEADERS_CREATED;
+            public int READ_EARLY_HINTS_RESPONSE_HEADERS;
             public int COOKIE_INCLUSION_STATUS;
             public int FILTERED_BYTES_READ;
             public int SEND_BODY;
@@ -39,6 +42,9 @@ namespace FiddlerImportNetlog
             public int SSL_CERTIFICATES_RECEIVED;
             public int SSL_HANDSHAKE_MESSAGE_RECEIVED;
             public int TCP_CONNECT;
+            public int HOST_RESOLVER_IMPL_REQUEST;
+            public int HOST_RESOLVER_IMPL_JOB;
+            public int HOST_RESOLVER_IMPL_PROC_TASK;
         }
 
         internal static string DescribeExceptionWithStack(Exception eX)
@@ -143,24 +149,32 @@ namespace FiddlerImportNetlog
 
         private void ExtractSessionsFromTraceJSON(ArrayList alTraceEvents)
         {
-            NetLogMagics.URL_REQUEST = 1;
-            NetLogMagics.SOCKET = 2;
+            // Sources
+            NetLogMagics.SRC_NONE = 0;
+            NetLogMagics.SRC_URL_REQUEST = 1;
+            NetLogMagics.SRC_SOCKET = 2;
+            NetLogMagics.SRC_HOST_RESOLVER_IMPL_JOB = 3;
 
             // Events
-            NetLogMagics.REQUEST_ALIVE = 3;
-            NetLogMagics.URL_REQUEST_START_JOB = 4;
-            NetLogMagics.SEND_HEADERS = 5;
-            NetLogMagics.SEND_QUIC_HEADERS = 6;
-            NetLogMagics.SEND_HTTP2_HEADERS = 7;
-            NetLogMagics.READ_HEADERS = 8;
-            NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED = 9;
-            NetLogMagics.COOKIE_INCLUSION_STATUS = 10;
-            NetLogMagics.FILTERED_BYTES_READ = 11;
-            NetLogMagics.SEND_BODY = 12;
-            NetLogMagics.SEND_REQUEST = 13;
-            NetLogMagics.SSL_CERTIFICATES_RECEIVED = 14;
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 15;
-            NetLogMagics.TCP_CONNECT = 16;
+            NetLogMagics.REQUEST_ALIVE = 10;
+            NetLogMagics.URL_REQUEST_START_JOB = 11;
+            NetLogMagics.SEND_HEADERS = 12;
+            NetLogMagics.SEND_QUIC_HEADERS = 13;
+            NetLogMagics.SEND_HTTP2_HEADERS = 14;
+            NetLogMagics.READ_HEADERS = 15;
+            NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED = 16;
+            NetLogMagics.READ_EARLY_HINTS_RESPONSE_HEADERS = 17;
+            NetLogMagics.COOKIE_INCLUSION_STATUS = 18;
+            NetLogMagics.FILTERED_BYTES_READ = 19;
+            NetLogMagics.SEND_BODY = 20;
+            NetLogMagics.SEND_REQUEST = 21;
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = 22;
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 23;
+            NetLogMagics.TCP_CONNECT = 24;
+
+            NetLogMagics.HOST_RESOLVER_IMPL_REQUEST = 30;
+            NetLogMagics.HOST_RESOLVER_IMPL_JOB = 31;
+            NetLogMagics.HOST_RESOLVER_IMPL_PROC_TASK = 32;
 
             List<Hashtable> listEvents = new List<Hashtable>();
             foreach (Hashtable htItem in alTraceEvents)
@@ -321,17 +335,20 @@ namespace FiddlerImportNetlog
             // TODO: These should probably use a convenient wrapper for GetHashtableInt
 
             // Sources
-            NetLogMagics.URL_REQUEST = getIntValue(htSourceTypes["URL_REQUEST"], -999);
-            NetLogMagics.SOCKET = getIntValue(htSourceTypes["SOCKET"], -998);
+            NetLogMagics.SRC_NONE = getIntValue(htSourceTypes["NONE"], 0);
+            NetLogMagics.SRC_URL_REQUEST = getIntValue(htSourceTypes["URL_REQUEST"], -9999);
+            NetLogMagics.SRC_SOCKET = getIntValue(htSourceTypes["SOCKET"], -9998);
+            NetLogMagics.SRC_HOST_RESOLVER_IMPL_JOB = getIntValue(htSourceTypes["HOST_RESOLVER_IMPL_JOB"], -9997);
 
             #region GetEventTypes
             // HTTP-level Events
-            NetLogMagics.REQUEST_ALIVE = getIntValue(htEventTypes["REQUEST_ALIVE"], -987);
-            NetLogMagics.URL_REQUEST_START_JOB = getIntValue(htEventTypes["URL_REQUEST_START_JOB"], -997);
-            NetLogMagics.SEND_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"], -996);
-            NetLogMagics.SEND_QUIC_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"], -995);
-            NetLogMagics.SEND_HTTP2_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"], -994);
-            NetLogMagics.READ_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"], -993);
+            NetLogMagics.REQUEST_ALIVE = getIntValue(htEventTypes["REQUEST_ALIVE"], -999);
+            NetLogMagics.URL_REQUEST_START_JOB = getIntValue(htEventTypes["URL_REQUEST_START_JOB"], -998);
+            NetLogMagics.SEND_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST_HEADERS"], -997);
+            NetLogMagics.SEND_QUIC_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_QUIC_SEND_REQUEST_HEADERS"], -996);
+            NetLogMagics.SEND_HTTP2_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_HTTP2_SEND_REQUEST_HEADERS"], -995);
+            NetLogMagics.READ_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_READ_RESPONSE_HEADERS"], -994);
+            NetLogMagics.READ_EARLY_HINTS_RESPONSE_HEADERS = getIntValue(htEventTypes["HTTP_TRANSACTION_READ_EARLY_HINTS_RESPONSE_HEADERS"], -993);
             NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED = getIntValue(htEventTypes["URL_REQUEST_FAKE_RESPONSE_HEADERS_CREATED"], -992);
             NetLogMagics.FILTERED_BYTES_READ = getIntValue(htEventTypes["URL_REQUEST_JOB_FILTERED_BYTES_READ"], -991);
             NetLogMagics.COOKIE_INCLUSION_STATUS = getIntValue(htEventTypes["COOKIE_INCLUSION_STATUS"], -990);
@@ -339,9 +356,14 @@ namespace FiddlerImportNetlog
             NetLogMagics.SEND_REQUEST = getIntValue(htEventTypes["HTTP_TRANSACTION_SEND_REQUEST"], -988);
 
             // Socket-level Events
-            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -987);
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -986);
-            NetLogMagics.TCP_CONNECT = getIntValue(htEventTypes["TCP_CONNECT"], -987);
+            NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -899);
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -898);
+            NetLogMagics.TCP_CONNECT = getIntValue(htEventTypes["TCP_CONNECT"], -897);
+
+            // DNS
+            NetLogMagics.HOST_RESOLVER_IMPL_REQUEST = getIntValue(htEventTypes["HOST_RESOLVER_IMPL_REQUEST"], -799);
+            NetLogMagics.HOST_RESOLVER_IMPL_JOB = getIntValue(htEventTypes["HOST_RESOLVER_IMPL_JOB"], -798);
+            NetLogMagics.HOST_RESOLVER_IMPL_PROC_TASK = getIntValue(htEventTypes["HOST_RESOLVER_IMPL_PROC_TASK"], -797);
 
             // Get ALL event type names as strings for pretty print view
             dictEventTypes = new Dictionary<int, string>();
@@ -417,6 +439,7 @@ namespace FiddlerImportNetlog
             int iLastPct = 25;
             var dictURLRequests = new Dictionary<int, List<Hashtable>>();
             var dictSockets = new Dictionary<int, List<Hashtable>>();
+            var dictDNSResolutions = new Dictionary<int, List<Hashtable>>();
 
             // Loop over events; bucket those associated to URLRequests by the source request's ID.
             ArrayList alEvents = htFile["events"] as ArrayList;
@@ -429,7 +452,7 @@ namespace FiddlerImportNetlog
                 int iSourceType = getIntValue(htSource["type"], -1);
 
                 #region ParseCertificateRequestMessagesAndDumpToLog
-                if (iSourceType == NetLogMagics.SOCKET)
+                if (NetLogMagics.SRC_SOCKET == iSourceType)
                 {
                     try
                     {
@@ -463,8 +486,52 @@ namespace FiddlerImportNetlog
                 }
                 #endregion ParseCertificateRequestMessagesAndDumpToLog
 
+                // DNS lookup
+                if (NetLogMagics.SRC_NONE == iSourceType)
+                {
+                    int iType = getIntValue(htEvent["type"], -1);
+                    if (iType == NetLogMagics.HOST_RESOLVER_IMPL_REQUEST)
+                    {
+                        // TODO: Do we actually care about any of the flags here?
+                       // FiddlerApplication.Log.LogString("!!0" + JSON.JsonEncode(htEvent));
+                        /*
+                         "source":{"type":0, "start_time":"817048", "id":3246}, 
+                         "params":{"network_isolation_key":"null null", "dns_query_type":0, "allow_cached_response":true, "is_speculative":false, 
+                                   "host":"ragnsells.crm4.dynamics.com:443"}, "time":"817048",
+                                   "type":3, "phase":1}
+                        */
+                     }
+                }
+
+                if (NetLogMagics.SRC_HOST_RESOLVER_IMPL_JOB == iSourceType)
+                {
+                    // All events we care about should have parameters.
+                    if (!(htEvent["params"] is Hashtable htParams)) continue;
+                    int iType = getIntValue(htEvent["type"], -1);
+
+                    // Two DNS-related events have all the data we care about.
+                    if ((iType == NetLogMagics.HOST_RESOLVER_IMPL_JOB) || (iType == NetLogMagics.HOST_RESOLVER_IMPL_PROC_TASK))
+                    {
+                        int iResolutionID = getIntValue(htSource["id"], -1);
+                        List<Hashtable> events;
+                        // Get (or create) the List of entries for this sDNSHost.
+                        if (!dictDNSResolutions.ContainsKey(iResolutionID))
+                        {
+                            events = new List<Hashtable>();
+                            dictDNSResolutions.Add(iResolutionID, events);
+                        }
+                        else
+                        {
+                            events = dictDNSResolutions[iResolutionID];
+                        }
+                        // Add this event to the sDNSHost's list.
+                        events.Add(htEvent);
+                        continue;
+                    }
+                }
+
                 // Collect only events related to URL_REQUESTS.
-                if (iSourceType != NetLogMagics.URL_REQUEST) continue;
+                if (NetLogMagics.SRC_URL_REQUEST != iSourceType) continue;
 
                 int iURLRequestID = getIntValue(htSource["id"], -1);
 
@@ -514,6 +581,7 @@ namespace FiddlerImportNetlog
 
             GenerateDebugTreeSession(dictURLRequests);
             GenerateSocketListSession(dictSockets);
+            GenerateDNSResolutionListSession(dictDNSResolutions);
 
             NotifyProgress(1, "Import Completed.");
             return true;
@@ -766,6 +834,50 @@ namespace FiddlerImportNetlog
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateSocketListSession failed: " + DescribeExceptionWithStack(e)); }
         }
 
+        private void GenerateDNSResolutionListSession(Dictionary<int, List<Hashtable>> dictDNSResolutions)
+        {
+            try
+            {
+                //                if (htAllSockets.Count > 0)
+                {
+                    Hashtable htAllResolutions = new Hashtable();
+                    foreach (KeyValuePair<int, List<Hashtable>> kvpResolution in dictDNSResolutions)
+                    {
+                        string sHost = String.Empty;
+                        Hashtable htData = new Hashtable();
+                        foreach (Hashtable htEvent in kvpResolution.Value)
+                        {
+                            int iType = getIntValue(htEvent["type"], -1);
+                            var htParams = (Hashtable)htEvent["params"];
+
+                            if (iType == NetLogMagics.HOST_RESOLVER_IMPL_JOB)
+                            {
+                                sHost = (htParams["host"] as String) ?? "(missing)";
+                                continue;
+                            }
+                            if (iType == NetLogMagics.HOST_RESOLVER_IMPL_PROC_TASK)
+                            {
+                                htData = htParams;
+                                continue;
+                            }
+
+                        }
+                        htAllResolutions.Add(sHost, htData);
+
+                    }
+                    _listSessions.Add(Session.BuildFromData(false,
+                    new HTTPRequestHeaders(
+                        String.Format("/DNS_LOOKUPS"), // TODO: Add Machine name?
+                        new[] { "Host: NETLOG" }),
+                    Utilities.emptyByteArray,
+                    new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllResolutions)),
+                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                }
+            }
+            catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDNSResolutionListSession failed: " + DescribeExceptionWithStack(e)); }
+        }
+
         private static string GetHashSigString(int iHash, int iSig)
         {
             string sHash;
@@ -830,6 +942,7 @@ namespace FiddlerImportNetlog
             SessionFlags oSF = SessionFlags.ImportedFromOtherTool | SessionFlags.ResponseStreamed;  // IsHTTPS?
             HTTPRequestHeaders oRQH = null;
             HTTPResponseHeaders oRPH = null;
+            ArrayList alEarlyHints = null;
             MemoryStream msResponseBody = new MemoryStream();
             Dictionary<string, string> dictSessionFlags = new Dictionary<string, string>();
             List<string> listCookieSendExclusions = new List<string>();
@@ -915,7 +1028,7 @@ namespace FiddlerImportNetlog
                             FiddlerApplication.Log.LogFormat("Got more than one START_JOB on URLRequest #{0} for {1}", kvpUR.Key, sURL);
                             AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
                             BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
-                            oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); sURL = String.Empty; sMethod = "GET"; oTimers = new SessionTimers();
+                            alEarlyHints = null; oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); sURL = String.Empty; sMethod = "GET"; oTimers = new SessionTimers();
                             // We are effectively on a new request, don't act like we've seen headers for it before.
                             bHasSendRequest = false;
                             listCookieSetExclusions.Clear();
@@ -949,7 +1062,7 @@ namespace FiddlerImportNetlog
                             AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
                             BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
                             // Keep sURL and sMethod, they shouldn't be changing.
-                            oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); oTimers = new SessionTimers();
+                            alEarlyHints = null; oRQH = null; oRPH = null; msResponseBody = new MemoryStream(); oTimers = new SessionTimers();
 
                             listCookieSetExclusions.Clear();
                             listCookieSendExclusions.Clear();
@@ -1057,6 +1170,16 @@ namespace FiddlerImportNetlog
                         continue;
                     }
 
+                    if (iType == NetLogMagics.READ_EARLY_HINTS_RESPONSE_HEADERS)
+                    {
+                        ArrayList alHeaderLines = htParams["headers"] as ArrayList;
+                        if (null != alHeaderLines && alHeaderLines.Count > 0)
+                        {
+                            if (null == alEarlyHints) alEarlyHints = new ArrayList();
+                            alEarlyHints.AddRange(alHeaderLines);
+                        }
+
+                    }
                     if ((iType == NetLogMagics.READ_HEADERS) ||
                         (iType == NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED))
                     {
@@ -1066,6 +1189,13 @@ namespace FiddlerImportNetlog
                         {
                             string sResponse = string.Join("\r\n", alHeaderLines.Cast<string>().ToArray());
                             oRPH = Fiddler.Parser.ParseResponse(sResponse);
+                            if (null != alEarlyHints && alEarlyHints.Count > 0)
+                            {
+                                foreach (string s in alEarlyHints)
+                                {
+                                    oRPH.Add("_X-NetLog-Found-Early-Hint", s);
+                                }
+                            }
                         }
                         continue;
                     }
