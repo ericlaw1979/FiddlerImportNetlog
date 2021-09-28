@@ -836,36 +836,43 @@ namespace FiddlerImportNetlog
 
         private void GenerateDNSResolutionListSession(Dictionary<int, List<Hashtable>> dictDNSResolutions)
         {
+            if (dictDNSResolutions.Count < 1) return;
             try
             {
-                //                if (htAllSockets.Count > 0)
+                Hashtable htAllResolutions = new Hashtable();
+                foreach (KeyValuePair<int, List<Hashtable>> kvpResolution in dictDNSResolutions)
                 {
-                    Hashtable htAllResolutions = new Hashtable();
-                    foreach (KeyValuePair<int, List<Hashtable>> kvpResolution in dictDNSResolutions)
+                    string sHost = String.Empty;
+                    Hashtable htData = new Hashtable();
+                    foreach (Hashtable htEvent in kvpResolution.Value)
                     {
-                        string sHost = String.Empty;
-                        Hashtable htData = new Hashtable();
-                        foreach (Hashtable htEvent in kvpResolution.Value)
+                        int iType = getIntValue(htEvent["type"], -1);
+                        var htParams = (Hashtable)htEvent["params"];
+
+                        // TODO: HOST_RESOLVER_IMPL_JOB_REQUEST_ATTACH has a list of all of the sslconnectjobs
+                        // that attached to this resolution looking for an address to use.
+
+                        if (iType == NetLogMagics.HOST_RESOLVER_IMPL_JOB)
                         {
-                            int iType = getIntValue(htEvent["type"], -1);
-                            var htParams = (Hashtable)htEvent["params"];
-
-                            if (iType == NetLogMagics.HOST_RESOLVER_IMPL_JOB)
-                            {
-                                sHost = (htParams["host"] as String) ?? "(missing)";
-                                continue;
-                            }
-                            if (iType == NetLogMagics.HOST_RESOLVER_IMPL_PROC_TASK)
-                            {
-                                htData = htParams;
-                                continue;
-                            }
-
+                            sHost = (htParams["host"] as String) ?? "(missing)";
+                            continue;
                         }
-                        htAllResolutions.Add(sHost, htData);
+                        if (iType == NetLogMagics.HOST_RESOLVER_IMPL_PROC_TASK)
+                        {
+                            // TODO: What if there's more than one?
+                            if (htParams.ContainsKey("canonical_name") && ((htParams["canonical_name"] as String) == String.Empty))
+                            {
+                                htParams.Remove("canonical_name");
+                            }
+                            htData = htParams;
+                            continue;
+                        }
 
                     }
-                    _listSessions.Add(Session.BuildFromData(false,
+                    htAllResolutions.Add(sHost, htData);
+                }
+
+                _listSessions.Add(Session.BuildFromData(false,
                     new HTTPRequestHeaders(
                         String.Format("/DNS_LOOKUPS"), // TODO: Add Machine name?
                         new[] { "Host: NETLOG" }),
@@ -873,7 +880,6 @@ namespace FiddlerImportNetlog
                     new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
                     Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllResolutions)),
                     SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
-                }
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDNSResolutionListSession failed: " + DescribeExceptionWithStack(e)); }
         }

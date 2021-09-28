@@ -8,7 +8,10 @@ using System.IO.Compression;
 
 namespace FiddlerImportNetlog
 {
-    [ProfferFormat("NetLog JSON", "Chromium's JSON-based event log format (v1.3.2.1). See https://dev.chromium.org/for-testers/providing-network-details for more details.")]
+    [ProfferFormat("NetLog JSON", 
+                   "Chromium's JSON-based event log format (v1.3.2.2). See https://dev.chromium.org/for-testers/providing-network-details for more details.",
+                   ".json;.gz"  // We handle import of JSON files.
+                  )]
     public class HTTPArchiveFormatImport : ISessionImporter
     {
         public Session[] ImportSessions(string sFormat, Dictionary<string, object> dictOptions, EventHandler<Fiddler.ProgressCallbackEventArgs> evtProgressNotifications)
