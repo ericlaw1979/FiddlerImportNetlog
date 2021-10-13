@@ -1014,10 +1014,16 @@ namespace FiddlerImportNetlog
                             switch (iTrafficAnnotation)
                             {
                                 // TODO (Bug #3): Lookup a friendly string from https://source.chromium.org/chromium/chromium/src/+/master:tools/traffic_annotation/summary/annotations.xml;l=27?q=101845102&ss=chromium
-                                case 63171670: sAnnotation += "- navigation_url_loader"; break;
-                                case 110815970: sAnnotation += "- resource prefetch"; break;
-                                case 101845102: sAnnotation += "- blink_resource_loader"; break;
-                                case 16469669: sAnnotation += "- background_fetch"; break;
+                                case 63171670:  sAnnotation += " (navigation_url_loader)"; break;
+                                case 101845102: sAnnotation += " (blink_resource_loader)"; break;
+                                case 110815970: sAnnotation += " (resource prefetch)"; break;
+                                case 112189210: sAnnotation += " (favicon_loader)"; break;
+                                case 16469669:  sAnnotation += " (background_fetch)"; break;
+                                case 35266994:  sAnnotation += " (early_hints_preload)"; break;
+                                case 113711087: sAnnotation += " (edge_replace_update_client)"; break;
+                                case 107267424: sAnnotation += " (open_search)"; break;
+                                case 21498113:  sAnnotation += " (service_worker_script_load)"; break;
+                                case 88863520:  sAnnotation += " (autofill_query)"; break;
                             }
                             dictSessionFlags["X-Netlog-Traffic_Annotation"] = sAnnotation;
                         }
