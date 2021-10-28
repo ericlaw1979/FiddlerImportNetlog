@@ -40,8 +40,10 @@ namespace FiddlerImportNetlog
             public int SEND_BODY;
             public int SEND_REQUEST;
             public int SSL_CERTIFICATES_RECEIVED;
+            public int SSL_HANDSHAKE_MESSAGE_SENT;
             public int SSL_HANDSHAKE_MESSAGE_RECEIVED;
             public int TCP_CONNECT;
+            public int SOCKET_BYTES_SENT;
             public int HOST_RESOLVER_IMPL_REQUEST;
             public int HOST_RESOLVER_IMPL_JOB;
             public int HOST_RESOLVER_IMPL_PROC_TASK;
@@ -169,8 +171,10 @@ namespace FiddlerImportNetlog
             NetLogMagics.SEND_BODY = 20;
             NetLogMagics.SEND_REQUEST = 21;
             NetLogMagics.SSL_CERTIFICATES_RECEIVED = 22;
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 23;
-            NetLogMagics.TCP_CONNECT = 24;
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_SENT = 23;
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = 24;
+            NetLogMagics.TCP_CONNECT = 25;
+            NetLogMagics.SOCKET_BYTES_SENT = 26;
 
             NetLogMagics.HOST_RESOLVER_IMPL_REQUEST = 30;
             NetLogMagics.HOST_RESOLVER_IMPL_JOB = 31;
@@ -357,8 +361,10 @@ namespace FiddlerImportNetlog
 
             // Socket-level Events
             NetLogMagics.SSL_CERTIFICATES_RECEIVED = getIntValue(htEventTypes["SSL_CERTIFICATES_RECEIVED"], -899);
-            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -898);
-            NetLogMagics.TCP_CONNECT = getIntValue(htEventTypes["TCP_CONNECT"], -897);
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_SENT = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_SENT"], -898);
+            NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED = getIntValue(htEventTypes["SSL_HANDSHAKE_MESSAGE_RECEIVED"], -897);
+            NetLogMagics.TCP_CONNECT = getIntValue(htEventTypes["TCP_CONNECT"], -896);
+            NetLogMagics.SOCKET_BYTES_SENT = getIntValue(htEventTypes["SOCKET_BYTES_SENT"], -895);
 
             // DNS
             NetLogMagics.HOST_RESOLVER_IMPL_REQUEST = getIntValue(htEventTypes["HOST_RESOLVER_IMPL_REQUEST"], -799);
@@ -463,7 +469,14 @@ namespace FiddlerImportNetlog
                         List<Hashtable> events;
                         int iSocketID = getIntValue(htSource["id"], -1);
 
+                        /*if (iType == NetLogMagics.SOCKET_BYTES_SENT)
+                        {
+                            FiddlerApplication.Log.LogFormat("!!!! IT WORKED!!!!");
+                             //htParams["bytes"]
+                        }*/
+
                         if (iType != NetLogMagics.SSL_CERTIFICATES_RECEIVED &&
+                            iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_SENT &&
                             iType != NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED &&
                             iType != NetLogMagics.TCP_CONNECT) continue;
 
@@ -713,18 +726,94 @@ namespace FiddlerImportNetlog
                             htThisSocket.Add("Server Certificates", alCerts);
                             continue;
                         }
+
+                        if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_SENT)
+                        {
+                            // https://source.chromium.org/chromium/chromium/src/+/main:third_party/boringssl/src/include/openssl/ssl3.h;l=306;drc=5539ecff898c79b0771340051d62bf81649e448d
+                            int iHandshakeMessageType = getIntValue(htParams["type"], -1);
+
+                            if ((iHandshakeMessageType != 1/*ClientHello*/)) continue;
+
+                            // Okay, it's a ClientHello. Log it.
+                            string sBase64Bytes = htParams["bytes"] as string;
+                            if (String.IsNullOrEmpty(sBase64Bytes)) continue;
+                            FiddlerApplication.Log.LogFormat("Saw Handshake Message Sent of type={0}", iHandshakeMessageType);
+
+                            if (iHandshakeMessageType == 1 /*ClientHello*/)
+                            {
+                                try
+                                {
+                                    byte[] arr = Convert.FromBase64String(sBase64Bytes);
+
+                                    MemoryStream oMS = new MemoryStream();
+                                    // BUG BUG BUG: HACKERY; we have to construct a fake header here.
+                                    oMS.WriteByte(0x16);
+                                    oMS.WriteByte(0x3);
+                                    oMS.WriteByte(0x3);
+                                    oMS.WriteByte(0);
+                                    oMS.WriteByte(0x9b);
+                                    oMS.Write(arr, 0, arr.Length);
+
+                                    oMS.Position = 0;
+                                    string sDesc = Utilities.UNSTABLE_DescribeClientHello(oMS);
+                                    //FiddlerApplication.Log.LogFormat("Got ClientHello:\n{0}\n{1}", Utilities.ByteArrayToHexView(arr, 16), sDesc);
+
+                                    var htClientHello = new Hashtable();
+                                    htThisSocket.Add("ClientHello", htClientHello);
+                                    htClientHello.Add("RAW", sBase64Bytes);
+                                    ArrayList arrDesc = new ArrayList(sDesc.Split('\n').Select(s => s.Trim().Replace('\t', ' ')).Where(s => !string.IsNullOrEmpty(s)).Skip(2).ToArray());
+                                    htClientHello.Add("Parsed", arrDesc);
+                                }
+                                catch { }
+
+                                continue;
+                            }
+                        }
+
                         // {"params":{"certificates":["-----BEGIN CERTIFICATE-----\nMIINqg==\n-----END CERTIFICATE-----\n","-----BEGIN CERTIFICATE-----\u4\n-----END CERTIFICATE-----\n"]},"phase":0,"source":{"id":789,"type":8},"time":"464074729","type":69},
                         // Parse out client certificate requests (Type 13==CertificateRequest)
                         // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60(SSL_HANDSHAKE_MESSAGE_RECEIVED)})
                         if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
                         {
+                            // https://source.chromium.org/chromium/chromium/src/+/main:third_party/boringssl/src/include/openssl/ssl3.h;l=306;drc=5539ecff898c79b0771340051d62bf81649e448d
                             int iHandshakeMessageType = getIntValue(htParams["type"], -1);
 
-                            if (iHandshakeMessageType != 13/*CertificateRequest*/) continue;
+                            if ((iHandshakeMessageType != 2/*ServerHello*/) &&
+                                (iHandshakeMessageType != 13/*CertificateRequest*/)) continue;
 
-                            // Okay, it's a CertificateRequest. Log it.
+                            // Okay, it's a ServerHello or CertificateRequest. Log it.
                             string sBase64Bytes = htParams["bytes"] as string;
                             if (String.IsNullOrEmpty(sBase64Bytes)) continue;
+                            //FiddlerApplication.Log.LogFormat("Saw Handshake Message Received of type={0}", iHandshakeMessageType);
+
+                            if (iHandshakeMessageType == 2 /*ServerHello*/)
+                            {
+                                try {
+                                    byte[] arr = Convert.FromBase64String(sBase64Bytes);
+
+                                    MemoryStream oMS = new MemoryStream();
+                                    // BUG BUG BUG: HACKERY; we have to construct a fake header here.
+                                    oMS.WriteByte(0x16);
+                                    oMS.WriteByte(0x3);
+                                    oMS.WriteByte(0x3);
+                                    oMS.WriteByte(0);
+                                    oMS.WriteByte(0x9b);
+                                    oMS.Write(arr, 0, arr.Length);
+
+                                    oMS.Position = 0;
+                                    string sDesc = Utilities.UNSTABLE_DescribeServerHello(oMS);
+                                    // FiddlerApplication.Log.LogFormat("Got ServerHello:\n{0}\n{1}", Utilities.ByteArrayToHexView(arr, 16), sDesc);
+
+                                    var htServerHello = new Hashtable();
+                                    htThisSocket.Add("ServerHello", htServerHello);
+                                    htServerHello.Add("RAW", sBase64Bytes);
+                                    ArrayList arrDesc = new ArrayList(sDesc.Split('\n').Select(s => s.Trim().Replace('\t', ' ')).Where(s => !string.IsNullOrEmpty(s)).Skip(2).ToArray());
+                                    htServerHello.Add("Parsed", arrDesc);
+                                }
+                                catch {}
+
+                                continue;
+                            }
 
                             // BORING SSL: https://cs.chromium.org/chromium/src/third_party/boringssl/src/ssl/handshake_client.cc?l=1102&rcl=5ce7022394055e183c12368778d361461fe90a6e
 
@@ -986,7 +1075,9 @@ namespace FiddlerImportNetlog
                             case "HTTP_TRANSACTION_SEND_REQUEST_BODY": iType = NetLogMagics.SEND_BODY; break;
                             case "HTTP_TRANSACTION_SEND_REQUEST": iType = NetLogMagics.SEND_REQUEST; break;
                             case "SSL_CERTIFICATES_RECEIVED": iType = NetLogMagics.SSL_CERTIFICATES_RECEIVED; break;
+                            case "SSL_HANDSHAKE_MESSAGE_SENT": iType = NetLogMagics.SSL_HANDSHAKE_MESSAGE_SENT; break;
                             case "SSL_HANDSHAKE_MESSAGE_RECEIVED": iType = NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED; break;
+                            case "SOCKET_BYTES_SENT": iType = NetLogMagics.SOCKET_BYTES_SENT; break;
                         }
                     }
 
