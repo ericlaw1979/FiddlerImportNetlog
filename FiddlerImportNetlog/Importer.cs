@@ -16,7 +16,7 @@ namespace FiddlerImportNetlog
     class NetlogImporter
     {
         /// <summary>
-        /// The Netlog file itself contains the mapping between string constants and the magic numbers used in the event entries.
+        /// The NetLog file itself contains the mapping between string constants and the magic numbers used in the event entries.
         /// </summary>
         struct Magics
         {
