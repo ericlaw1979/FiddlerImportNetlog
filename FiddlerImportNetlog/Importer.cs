@@ -1115,6 +1115,7 @@ namespace FiddlerImportNetlog
                                 case 107267424: sAnnotation += " (open_search)"; break;
                                 case 21498113:  sAnnotation += " (service_worker_script_load)"; break;
                                 case 88863520:  sAnnotation += " (autofill_query)"; break;
+                                case 30454590:  sAnnotation += " (smartscreen)"; break;
                             }
                             dictSessionFlags["X-Netlog-Traffic_Annotation"] = sAnnotation;
                         }
