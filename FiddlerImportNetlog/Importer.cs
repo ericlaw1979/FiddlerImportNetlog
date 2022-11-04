@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -1035,15 +1036,15 @@ namespace FiddlerImportNetlog
                                              arrExtData[iX++];
                         Debug.Assert((cbSigHashAlgs % 2) == 0);
 
-                        var alSigHashAlgs = new ArrayList();
+                        var alSigSchemes = new ArrayList();
 
                         for (int ixSigHashPair = 0; ixSigHashPair < cbSigHashAlgs / 2; ++ixSigHashPair)
                         {
-                            alSigHashAlgs.Add(GetHashSigString(arrExtData[iX + (2 * ixSigHashPair)], arrExtData[1+ iX + (2 * ixSigHashPair)]));
+                                alSigSchemes.Add(GetTLS13SigSchemeString((arrExtData[iX + (2 * ixSigHashPair)] << 8) + arrExtData[1+ iX + (2 * ixSigHashPair)]));
                         }
-                        htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
+                        htCertFilter.Add("Accepted SignatureSchemes", alSigSchemes);
                     }
-                    catch { htCertFilter.Add("Accepted SignatureAndHashAlgorithms", "Parse failure"); }
+                    catch { htCertFilter.Add("Accepted SignatureSchemes", "Parse failure"); }
                     break;
                 default:
                     htCertFilter.Add("FilterExt #" + iExtensionType.ToString(), "Length" + iExtDataLen.ToString());
@@ -1102,6 +1103,42 @@ namespace FiddlerImportNetlog
                     SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDNSResolutionListSession failed: " + DescribeExceptionWithStack(e)); }
+        }
+
+        // https://www.rfc-editor.org/rfc/rfc8446#section-4.3.2:~:text=extensions%20contains%20a-,SignatureSchemeList,-value%3A%0A%0A%20%20%20%20%20%20enum%20%7B%0A%20%20%20%20%20%20%20%20%20%20/*%20RSASSA
+        private static string GetTLS13SigSchemeString(int iValue)
+        {
+            switch (iValue)
+            {
+                case 0x0401: return "rsa_pkcs1_sha256";
+                case 0x0501: return "rsa_pkcs1_sha384";
+                case 0x0601: return "rsa_pkcs1_sha512";
+
+                /* ECDSA algorithms */
+                case 0x0403: return "ecdsa_secp256r1_sha256";
+                case 0x0503: return "ecdsa_secp384r1_sha384";
+                case 0x0603: return "ecdsa_secp521r1_sha512";
+
+                /* RSASSA-PSS algorithms with public key OID rsaEncryption */
+                case 0x0804: return "rsa_pss_rsae_sha256";
+                case 0x0805: return "rsa_pss_rsae_sha384";
+                case 0x0806: return "rsa_pss_rsae_sha512";
+
+                /* EdDSA algorithms */
+                case 0x0807: return "ed25519";
+                case 0x0808: return "ed448";
+
+                /* RSASSA-PSS algorithms with public key OID RSASSA-PSS */
+                case 0x0809: return "rsa_pss_pss_sha256";
+                case 0x080a: return "rsa_pss_pss_sha384";
+                case 0x080b: return "rsa_pss_pss_sha512";
+
+                case 0x0201: return "rsa_pkcs1_sha1";
+                case 0x0202: return "dsa_sha1";
+                case 0x0203: return "ecdsa_sha1";
+
+                default: return String.Format("unknown(0x{0:x})", iValue);
+            }
         }
 
         private static string GetHashSigString(int iHash, int iSig)
