@@ -743,13 +743,16 @@ namespace FiddlerImportNetlog
                             {
                                 try
                                 {
+                                    var htClientHello = new Hashtable();
+                                    htThisSocket.Add("ClientHello", htClientHello);       // TODO: Figure out why we're often hitting this twice.
+
                                     byte[] arr = Convert.FromBase64String(sBase64Bytes);
 
                                     MemoryStream oMS = new MemoryStream();
                                     // BUG BUG BUG: HACKERY; we have to construct a fake header here.
-                                    oMS.WriteByte(0x16);
+                                    oMS.WriteByte(0x16);    // TLS handshake protocol
                                     oMS.WriteByte(0x3);
-                                    oMS.WriteByte(0x3);
+                                    oMS.WriteByte(0x3);     // TODO: We should at least fill the version info correctly.
                                     oMS.WriteByte(0);
                                     oMS.WriteByte(0x9b);
                                     oMS.Write(arr, 0, arr.Length);
@@ -758,8 +761,6 @@ namespace FiddlerImportNetlog
                                     string sDesc = Utilities.UNSTABLE_DescribeClientHello(oMS);
                                     //FiddlerApplication.Log.LogFormat("Got ClientHello:\n{0}\n{1}", Utilities.ByteArrayToHexView(arr, 16), sDesc);
 
-                                    var htClientHello = new Hashtable();
-                                    htThisSocket.Add("ClientHello", htClientHello);
                                     htClientHello.Add("RAW", sBase64Bytes);
                                     ArrayList arrDesc = new ArrayList(sDesc.Split('\n').Select(s => s.Trim().Replace('\t', ' ')).Where(s => !string.IsNullOrEmpty(s)).Skip(2).ToArray());
                                     htClientHello.Add("Parsed", arrDesc);
@@ -772,7 +773,7 @@ namespace FiddlerImportNetlog
 
                         // {"params":{"certificates":["-----BEGIN CERTIFICATE-----\nMIINqg==\n-----END CERTIFICATE-----\n","-----BEGIN CERTIFICATE-----\u4\n-----END CERTIFICATE-----\n"]},"phase":0,"source":{"id":789,"type":8},"time":"464074729","type":69},
                         // Parse out client certificate requests (Type 13==CertificateRequest)
-                        // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60(SSL_HANDSHAKE_MESSAGE_RECEIVED)})
+                        // {"params":{"bytes":"DQA...","type":13},"phase":0,"source":{"id":10850,"type":8},"time":"160915359","type":60 (SSL_HANDSHAKE_MESSAGE_RECEIVED)})
                         if (iType == NetLogMagics.SSL_HANDSHAKE_MESSAGE_RECEIVED)
                         {
                             // https://source.chromium.org/chromium/chromium/src/+/main:third_party/boringssl/src/include/openssl/ssl3.h;l=306;drc=5539ecff898c79b0771340051d62bf81649e448d
@@ -784,18 +785,21 @@ namespace FiddlerImportNetlog
                             // Okay, it's a ServerHello or CertificateRequest. Log it.
                             string sBase64Bytes = htParams["bytes"] as string;
                             if (String.IsNullOrEmpty(sBase64Bytes)) continue;
-                            //FiddlerApplication.Log.LogFormat("Saw Handshake Message Received of type={0}", iHandshakeMessageType);
+                            // FiddlerApplication.Log.LogFormat("Saw Handshake Message Received of type={0}", iHandshakeMessageType);
 
                             if (iHandshakeMessageType == 2 /*ServerHello*/)
                             {
                                 try {
+                                    var htServerHello = new Hashtable();
+                                    htThisSocket.Add("ServerHello", htServerHello);  // TODO: Figure out why we're often reaching this twice.
+
                                     byte[] arr = Convert.FromBase64String(sBase64Bytes);
 
                                     MemoryStream oMS = new MemoryStream();
-                                    // BUG BUG BUG: HACKERY; we have to construct a fake header here.
+                                    // BUG BUG BUG: HACKERY; we have to construct a fake header here to feed it into the Utilities function which was meant for reading socket data not NetLog messages.
                                     oMS.WriteByte(0x16);
                                     oMS.WriteByte(0x3);
-                                    oMS.WriteByte(0x3);
+                                    oMS.WriteByte(0x3);             // TODO: We probably should at least fill the version info properly!
                                     oMS.WriteByte(0);
                                     oMS.WriteByte(0x9b);
                                     oMS.Write(arr, 0, arr.Length);
@@ -804,31 +808,61 @@ namespace FiddlerImportNetlog
                                     string sDesc = Utilities.UNSTABLE_DescribeServerHello(oMS);
                                     // FiddlerApplication.Log.LogFormat("Got ServerHello:\n{0}\n{1}", Utilities.ByteArrayToHexView(arr, 16), sDesc);
 
-                                    var htServerHello = new Hashtable();
-                                    htThisSocket.Add("ServerHello", htServerHello);
                                     htServerHello.Add("RAW", sBase64Bytes);
                                     ArrayList arrDesc = new ArrayList(sDesc.Split('\n').Select(s => s.Trim().Replace('\t', ' ')).Where(s => !string.IsNullOrEmpty(s)).Skip(2).ToArray());
                                     htServerHello.Add("Parsed", arrDesc);
+
+                                    // We learn if the server is using TLS/1.3 by checking if ServerHello's supported_versions specifies TLS/1.3
+                                    // https://datatracker.ietf.org/doc/html/rfc8446#section-4.2.1
+                                    // Note: This is Super Hacky and depends on Fiddler not changing the format of this string.
+                                    if (sDesc.Contains("supported_versions\tTls1.3"))
+                                      htThisSocket.Add("Negotiated TLS Version", "1.3");
                                 }
                                 catch {}
 
                                 continue;
                             }
 
-                            // BORING SSL: https://cs.chromium.org/chromium/src/third_party/boringssl/src/ssl/handshake_client.cc?l=1102&rcl=5ce7022394055e183c12368778d361461fe90a6e
+                            Debug.Assert(iHandshakeMessageType == 13 /*CertificateRequest*/);
+
+                            // BORING SSL verion of the parsing logic:
+                            // https://cs.chromium.org/chromium/src/third_party/boringssl/src/ssl/handshake_client.cc?l=1102&rcl=5ce7022394055e183c12368778d361461fe90a6e
 
                             var htCertFilter = new Hashtable();
                             htThisSocket.Add("Request for Client Certificate", htCertFilter);
                             htThisSocket.Add("RAW", sBase64Bytes);
 
                             byte[] arrCertRequest = Convert.FromBase64String(sBase64Bytes);
-
                             Debug.Assert(13 == arrCertRequest[0]);
-                            int iPayloadSize = (arrCertRequest[1] << 16) +
-                                                (arrCertRequest[2] << 8) +
-                                                arrCertRequest[3];
 
-                            Debug.Assert(iPayloadSize == arrCertRequest.Length - 4);
+                            /* Each version of TLS redefined the format of the CertificateRequest message.
+                             * TLS 1.0/TLS/1.1: https://www.rfc-editor.org/rfc/rfc4346#section-7.4.4
+                                struct {
+                                    ClientCertificateType certificate_types<1..2^8-1>;
+                                    DistinguishedName certificate_authorities<3..2^16-1>;
+                                } CertificateRequest;
+
+                             * TLS 1.2: https://www.rfc-editor.org/rfc/rfc5246#section-7.4.4
+                                struct {
+                                    ClientCertificateType certificate_types<1..2^8-1>;
+                                    SignatureAndHashAlgorithm supported_signature_algorithms<2^16-1>;
+                                    DistinguishedName certificate_authorities<0..2^16-1>;
+                                } CertificateRequest;
+
+                             * TLS 1.3: https://datatracker.ietf.org/doc/html/rfc8446#section-4.3.2
+                                struct {
+                                    opaque certificate_request_context<0..2^8-1>;
+                                    Extension extensions<2..2^16-1>;
+                                } CertificateRequest
+                             */
+
+                            if ((htThisSocket["Negotiated TLS Version"] as string) == "1.3")
+                            {
+                                ParseTLS1dot3CertificateRequest(htCertFilter, arrCertRequest);
+                                continue;
+                            }
+
+                            // TLS/1.2 path
 
                             byte cCertTypes = arrCertRequest[4];
                             var alCertTypes = new ArrayList();
@@ -859,24 +893,34 @@ namespace FiddlerImportNetlog
                             htCertFilter.Add("Accepted ClientCertificateTypes", alCertTypes);
 
                             int iPtr = 5 + cCertTypes;
-                            int cbSigHashAlgs = (arrCertRequest[iPtr++] << 8) +
-                                                 arrCertRequest[iPtr++];
-                            Debug.Assert((cbSigHashAlgs % 2) == 0);
+                            // BUGBUG: Only TLS/1.2+ have sig/hash pairs; these are omitted in TLS/1.1 and earlier. This probably
+                            // doesn't really matter now that Chromium only supports TLS/1.2 and later.
+                            try
+                            {
+                                int cbSigHashAlgs = (arrCertRequest[iPtr++] << 8) +
+                                                     arrCertRequest[iPtr++];
+                                Debug.Assert((cbSigHashAlgs % 2) == 0);
 
-                            var alSigHashAlgs = new ArrayList();
+                                var alSigHashAlgs = new ArrayList();
 
-                            // TODO: Only TLS/1.2+ have sig/hash pairs; these are omitted in TLS1.1 and earlier
-                            for (int ixSigHashPair = 0; ixSigHashPair < cbSigHashAlgs/2; ++ixSigHashPair) {
-                                alSigHashAlgs.Add(GetHashSigString(arrCertRequest[iPtr + (2*ixSigHashPair)], arrCertRequest[iPtr + (2*ixSigHashPair) + 1]));
+                                for (int ixSigHashPair = 0; ixSigHashPair < cbSigHashAlgs / 2; ++ixSigHashPair)
+                                {
+                                    alSigHashAlgs.Add(GetHashSigString(arrCertRequest[iPtr + (2 * ixSigHashPair)], arrCertRequest[iPtr + (2 * ixSigHashPair) + 1]));
+                                }
+                                htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
+                                iPtr += (cbSigHashAlgs);
                             }
-                            htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
-                            iPtr += (cbSigHashAlgs);
-                            //FiddlerApplication.Log.LogFormat("Found CertificateRequest on Socket #{0}:\n{1}", iSocketId, Fiddler.Utilities.ByteArrayToHexView(arrCertificateRequest, 24));
-                            int cbCADistinguishedNames = (arrCertRequest[iPtr++] << 8) +
-                                                          arrCertRequest[iPtr++];
+                            catch (Exception eX) {
+                                FiddlerApplication.ReportException(eX, "Failed to parse Signature/Hash algorithms in NetLog");
+                            }
+
+                            Debug.Assert(iPtr < arrCertRequest.Length);  // Truncated data?
 
                             try
                             {
+                                int cbCADistinguishedNames = (arrCertRequest[iPtr++] << 8) +
+                                                              arrCertRequest[iPtr++];
+
                                 var alCADNs = new ArrayList();
                                 while (cbCADistinguishedNames > 0)
                                 {
@@ -921,6 +965,93 @@ namespace FiddlerImportNetlog
                 }
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateSocketListSession failed: " + DescribeExceptionWithStack(e)); }
+        }
+
+        /* TLS 1.3: https://datatracker.ietf.org/doc/html/rfc8446#section-4.3.2
+            struct {
+                opaque certificate_request_context<0..2^8-1>;
+                Extension extensions<2..2^16-1>;
+            } CertificateRequest
+
+            In TLS/1.3, fields for the certificate request are carried by "extensions":
+             https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xhtml
+               Extension 0x2F (decimal 47) => certificate_authorities
+               Extension 0x0D (decimal 13) => signature_algorithms
+               Extension 0x32 (decimal 50) => signature_algorithms_cert
+        */
+        private void ParseTLS1dot3CertificateRequest(Hashtable htCertFilter, byte[] arrCertRequest)
+        {
+            int iPayloadSize = (arrCertRequest[1] << 16) +
+                   (arrCertRequest[2] << 8) +
+                    arrCertRequest[3];
+
+            Debug.Assert(iPayloadSize == arrCertRequest.Length - 4);
+
+            int iPtr = 4;
+
+            // The first field of the request is a length-prefixed 0-255 byte opaque array named certificate_request_context
+            iPtr += 1+arrCertRequest[iPtr];
+
+            int cbExtensionList = (arrCertRequest[iPtr++] << 8) +
+                                  (arrCertRequest[iPtr++]);
+            Debug.Assert(iPtr + cbExtensionList == arrCertRequest.Length);
+            while (iPtr < arrCertRequest.Length)
+            {
+              int iExtensionType = (arrCertRequest[iPtr++] << 8) + arrCertRequest[iPtr++];
+              int iExtDataLen = (arrCertRequest[iPtr++] << 8) + arrCertRequest[iPtr++];
+
+              byte[] arrExtData = new byte[iExtDataLen];
+              Buffer.BlockCopy(arrCertRequest, iPtr, arrExtData, 0, arrExtData.Length);
+
+              switch (iExtensionType)
+              {
+                case 0x2f: // certificate_authorities
+                    try {
+                        var alCADNs = new ArrayList();
+                        int iX = 0;
+                        int cbCADistinguishedNames = (arrExtData[iX++] << 8) + arrExtData[iX++];
+                        while (cbCADistinguishedNames > 0)
+                        {
+                            int cbThisDN = (arrExtData[iX++] << 8) + arrExtData[iX++];
+                            try
+                            {
+                                byte[] bytesDER = new byte[cbThisDN];
+                                Buffer.BlockCopy(arrExtData, iX, bytesDER, 0, cbThisDN);
+                                AsnEncodedData asndata = new AsnEncodedData(bytesDER);
+                                alCADNs.Add(new X500DistinguishedName(asndata).Name);
+                            }
+                            catch { Debug.Assert(false); }
+                            cbCADistinguishedNames -= (2 + cbThisDN);
+                            iX += cbThisDN;
+                        }
+                        htCertFilter.Add("Accepted Authorities", alCADNs);
+                        }
+                    catch { htCertFilter.Add("Accepted Authorities", "Parse failure"); }
+                    break;
+                case 0x0d: // signature_algorithms
+                    try {
+                        int iX = 0;
+                        int cbSigHashAlgs = (arrExtData[iX++] << 8) +
+                                             arrExtData[iX++];
+                        Debug.Assert((cbSigHashAlgs % 2) == 0);
+
+                        var alSigHashAlgs = new ArrayList();
+
+                        for (int ixSigHashPair = 0; ixSigHashPair < cbSigHashAlgs / 2; ++ixSigHashPair)
+                        {
+                            alSigHashAlgs.Add(GetHashSigString(arrExtData[iX + (2 * ixSigHashPair)], arrExtData[1+ iX + (2 * ixSigHashPair)]));
+                        }
+                        htCertFilter.Add("Accepted SignatureAndHashAlgorithms", alSigHashAlgs);
+                    }
+                    catch { htCertFilter.Add("Accepted SignatureAndHashAlgorithms", "Parse failure"); }
+                    break;
+                default:
+                    htCertFilter.Add("FilterExt #" + iExtensionType.ToString(), "Length" + iExtDataLen.ToString());
+                break;
+              }
+
+              iPtr += (iExtDataLen);  // Skip the data*/
+            }
         }
 
         private void GenerateDNSResolutionListSession(Dictionary<int, List<Hashtable>> dictDNSResolutions)
@@ -987,6 +1118,7 @@ namespace FiddlerImportNetlog
                 case 4: sHash = "sha256"; break;
                 case 5: sHash = "sha384"; break;
                 case 6: sHash = "sha512"; break;
+                case 8: sHash = "intrinsic"; break;
                 default: sHash = String.Format("unknown(0x{0:x})", iHash); break;
             }
             switch (iSig)
@@ -996,6 +1128,9 @@ namespace FiddlerImportNetlog
                 case 1: sSig = "rsa"; break;
                 case 2: sSig = "dsa"; break;
                 case 3: sSig = "ecdsa"; break;
+                case 4: sSig = "(reserved-4)"; break;
+                case 5: sSig = "(reserved-5)"; break;
+                case 6: sSig = "(reserved-6)"; break;
                 case 7: sSig = "ed25519"; break;
                 case 8: sSig = "ed448"; break;
                 case 64: sSig = "gostr34102012_256"; break;
@@ -1225,11 +1360,11 @@ namespace FiddlerImportNetlog
                         // bool bIsLegacyCookie = (htParams["msft_browser_legacy_cookie"] as Boolean) ?? false;
                         // string bBrowserProvenance = (htParams["browser_provenance"] as string) ?? String.Empty /*Native*/;
 
-                        // TODO: As of Chrome 81, CookieInclusionStatusNetLogParams also adds |domain| and |path| attributes available if "sensitive" data is included.
+        // TODO: As of Chrome 81, CookieInclusionStatusNetLogParams also adds |domain| and |path| attributes available if "sensitive" data is included.
 
-                        // In Chrome 81.3993, the |exclusion_reason| field was renamed to |status| because the |cookie_inclusion_status| entries are
-                        // now also emitted for included cookies.
-                        string sExclusionReasons = (htParams["exclusion_reason"] as string);
+        // In Chrome 81.3993, the |exclusion_reason| field was renamed to |status| because the |cookie_inclusion_status| entries are
+        // now also emitted for included cookies.
+        string sExclusionReasons = (htParams["exclusion_reason"] as string);
                         if (String.IsNullOrEmpty(sExclusionReasons)) sExclusionReasons = (htParams["status"] as string) ?? String.Empty;
 
                         // If the log indicates that the cookie was included, just skip it for now.
