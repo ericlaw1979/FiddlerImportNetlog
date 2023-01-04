@@ -3,10 +3,10 @@ using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("FiddlerImportNetlog")]
 [assembly: AssemblyDescription("Import Chromium NetLog events to Fiddler")]
-[assembly: AssemblyCopyright("Copyright ©2021 Eric Lawrence")]
+[assembly: AssemblyCopyright("Copyright ©2023 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.3.4.1")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.3.4.2")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
 
 
@@ -19,6 +19,17 @@ t=3262 [st=0]        SOCKET_POOL_BOUND_TO_SOCKET
 t=3262 [st=0]    HTTP_STREAM_JOB_BOUND_TO_REQUEST
                  --> source_dependency = 1701 (URL_REQUEST)
 */
+
+// v1.3.4.2
+// When renaming Transfer-Encoding/Chunk-Encoding headers, set Content-Length to enhance AutoResponder playback
+// Update copyright to 2023
+
+// v1.3.4.1
+// Fix parsing of TLS/1.3 sigscheme list
+
+// v1.3.4.0
+// Parse certificaterequest message properly on TLS/1.3 connections
+// Add smartscreen to net annotations
 
 // v1.3.3.0
 // Add ClientHello and ServerHello to SecureSocket list

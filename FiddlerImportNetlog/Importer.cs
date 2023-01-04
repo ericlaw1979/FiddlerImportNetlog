@@ -1538,6 +1538,7 @@ namespace FiddlerImportNetlog
             {
                 oRQH = Fiddler.Parser.ParseRequest(sMethod + " " + sURL + " HTTP/1.1\r\nMissing-Data: Request Headers not captured in NetLog\r\n\r\n");
             }
+
             if (msResponseBody.Length < 1 && cbDroppedResponseBody > 0)
             {
                 dictSessionFlags["X-RESPONSEBODYTRANSFERLENGTH"] = cbDroppedResponseBody.ToString("N0");
@@ -1550,6 +1551,12 @@ namespace FiddlerImportNetlog
                 // headers so we can use this session for AutoResponder playback, etc.
                 oRPH.RenameHeaderItems("Content-Encoding", "X-Netlog-Removed-Content-Encoding");
                 oRPH.RenameHeaderItems("Transfer-Encoding", "X-Netlog-Removed-Transfer-Encoding");
+                string sOriginalCL = oRPH["Content-Length"];
+                oRPH["Content-Length"] = msResponseBody.Length.ToString();
+                if (!String.IsNullOrEmpty(sOriginalCL) && oRPH["Content-Length"] != sOriginalCL)
+                {
+                    oRPH["X-Netlog-Original-Content-Length"] = sOriginalCL;
+                }
             }
 
             Session oS = Session.BuildFromData(false,

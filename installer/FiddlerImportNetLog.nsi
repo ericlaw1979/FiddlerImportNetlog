@@ -16,7 +16,7 @@ VIProductVersion "${VER_ADDON}"
 VIAddVersionKey "FileVersion" "${VER_ADDON}"
 VIAddVersionKey "ProductName" "Fiddler NetLog Importer"
 VIAddVersionKey "Comments" "https://textslashplain.com/"
-VIAddVersionKey "LegalCopyright" "©2019 Eric Lawrence"
+VIAddVersionKey "LegalCopyright" "©2023 Eric Lawrence"
 VIAddVersionKey "CompanyName" "Eric Lawrence"
 VIAddVersionKey "FileDescription" "Installer for Fiddler Fiddler NetLog Importer"
 
