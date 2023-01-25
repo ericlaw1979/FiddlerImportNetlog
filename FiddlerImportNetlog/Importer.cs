@@ -1460,7 +1460,6 @@ namespace FiddlerImportNetlog
                         (iType == NetLogMagics.FAKE_RESPONSE_HEADERS_CREATED))
                     {
                         ArrayList alHeaderLines = htParams["headers"] as ArrayList;
-                        oTimers.ServerBeginResponse = oTimers.FiddlerGotResponseHeaders = GetTimeStamp(htEvent["time"], baseTime);
                         if (null != alHeaderLines && alHeaderLines.Count > 0)
                         {
                             string sResponse = string.Join("\r\n", alHeaderLines.Cast<string>().ToArray());
@@ -1473,6 +1472,8 @@ namespace FiddlerImportNetlog
                                 }
                             }
                         }
+
+                        oTimers.ClientBeginResponse = oTimers.FiddlerGotResponseHeaders = oTimers.ServerBeginResponse = GetTimeStamp(htEvent["time"], baseTime);
                         continue;
                     }
 
@@ -1490,6 +1491,7 @@ namespace FiddlerImportNetlog
                         {
                             cbDroppedResponseBody += getIntValue(htParams["byte_count"], 0);
                         }
+                        oTimers.ServerDoneResponse = oTimers.ClientDoneResponse = GetTimeStamp(htEvent["time"], baseTime);
                         continue;
                     }
                 }
