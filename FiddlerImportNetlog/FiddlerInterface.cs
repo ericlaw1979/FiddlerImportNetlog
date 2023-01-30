@@ -9,7 +9,7 @@ using System.IO.Compression;
 namespace FiddlerImportNetlog
 {
     [ProfferFormat("NetLog JSON",
-                   "Chromium's JSON-based event log format (v1.3.4.3). See https://textslashplain.com/2020/01/17/capture-network-logs-from-edge-and-chrome/ for more info.",
+                   "Chromium's JSON-based event log format (v1.3.4.4). See https://textslashplain.com/2020/01/17/capture-network-logs-from-edge-and-chrome/ for more info.",
                    // We handle import of JSON files, whether uncompressed, or compressed with ZIP or GZ. I'm not completely sure I remember the implications
                    // of declaring .gz here, nor why .zip isn't mentioned. Is this about the drag/drop import feature?
                    ".json;.gz"

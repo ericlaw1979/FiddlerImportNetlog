@@ -711,20 +711,45 @@ namespace FiddlerImportNetlog
                         {
                             StringBuilder sbCertsReceived = new StringBuilder();
                             ArrayList alCerts = htParams["certificates"] as ArrayList;
+                            if (alCerts.Count < 1) continue;
 
-                            // Try to promote the SubjectCN to the title of this node
+                            Hashtable htParsedCerts = new Hashtable(alCerts.Count);
                             try
                             {
-                                if (String.IsNullOrEmpty(sSubjectCNinFirstCert) && alCerts.Count > 0)
+                                for (int i = 0; i < alCerts.Count; i++)
                                 {
-                                    var FirstCert = new X509Certificate2();
-                                    string sCertInfo = alCerts[0] as string;
-                                    FirstCert.Import(Encoding.ASCII.GetBytes(sCertInfo));
-                                    sSubjectCNinFirstCert = (" - " + FirstCert.GetNameInfo(X509NameType.SimpleName, false)).ToLower();
+                                    var htThisCert = new Hashtable();
+                                    htParsedCerts.Add(i.ToString(), htThisCert);
+                                    var certItem = new X509Certificate2();
+
+                                    certItem.Import(Encoding.ASCII.GetBytes(alCerts[i] as string));
+
+                                    // Try to promote the SubjectCN to the title of this Socket.
+                                    if (String.IsNullOrEmpty(sSubjectCNinFirstCert))
+                                    {
+                                        sSubjectCNinFirstCert = (" - " + certItem.GetNameInfo(X509NameType.SimpleName, false)).ToLower();
+                                    }
+
+                                    htThisCert.Add("Parsed", new ArrayList
+                                    {
+                                        "Subject: " + certItem.GetNameInfo(X509NameType.SimpleName, false),
+                                        "Issuer: " + certItem.Issuer,
+                                        "Expires: " + certItem.NotAfter.ToString("yyyy-MM-dd")
+                                    });
+
+                                    htThisCert.Add("RAW", new ArrayList
+                                    {
+                                        alCerts[i]
+                                    });
                                 }
+                                htThisSocket.Add("Server Certificates", htParsedCerts);
                             }
-                            catch { }
-                            htThisSocket.Add("Server Certificates", alCerts);
+                            catch (Exception ex)
+                            {
+                                FiddlerApplication.Log.LogString(ex.Message);
+                                htThisSocket.Add("Server Certificates", alCerts);
+                            }
+
                             continue;
                         }
 
