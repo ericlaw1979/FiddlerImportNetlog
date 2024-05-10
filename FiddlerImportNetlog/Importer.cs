@@ -122,6 +122,10 @@ namespace FiddlerImportNetlog
             Stopwatch oSW = Stopwatch.StartNew();
             string sJSONData = oSR.ReadToEnd();
             Hashtable htFile = JSON.JsonDecode(sJSONData, out _) as Hashtable;
+
+            // If JSON-parsing failed, it's possible that the file was truncated either during capture or transfer.
+            // Try repairing the end of file by replacing the last (incomplete) line.
+            // This strategy is borrowed from the online "Catapult" netlog viewer app.
             if (null == htFile)
             {
                 int iEnd = Math.Max(sJSONData.LastIndexOf(",\n"), sJSONData.LastIndexOf(",\r"));
@@ -134,7 +138,7 @@ namespace FiddlerImportNetlog
                     FiddlerApplication.DoNotifyUser("This file is not properly-formatted NetLog JSON.", "Import aborted");
                     return;
                 }
-                else { FiddlerApplication.DoNotifyUser("This file was truncated and may be missing data.", "Warning"); }
+                else { FiddlerApplication.DoNotifyUser("This file was truncated and may be missing data.\nParsing any readable data.", "Warning"); }
             }
 
             NotifyProgress(0.25f, "Finished parsing JSON file; took " + oSW.ElapsedMilliseconds + "ms.");
