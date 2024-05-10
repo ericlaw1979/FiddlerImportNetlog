@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -89,7 +87,7 @@ namespace FiddlerImportNetlog
 
         private static DateTime GetTimeStamp(object o, long baseTime)
         {
-            // TODO: Something sane if o is null
+            // TODO: Something reasonable if o is null?
             long t = baseTime;
             if (null != o)
             {
@@ -105,26 +103,38 @@ namespace FiddlerImportNetlog
             return DateTimeOffset.FromUnixTimeMilliseconds(t).DateTime.ToLocalTime();
         }
 
+        #region Fields
         List<Session> _listSessions;
         readonly EventHandler<ProgressCallbackEventArgs> _evtProgressNotifications;
         Magics NetLogMagics;
 
-        string sClient;
-        long baseTime;
+        string _sClient;
+        long _baseTime;
+        DateTimeOffset _dtBaseTime;
         Dictionary<int, string> dictEventTypes;
         Dictionary<int, string> dictNetErrors;
+        #endregion Fields
 
         internal NetlogImporter(StreamReader oSR, List<Session> listSessions, EventHandler<ProgressCallbackEventArgs> evtProgressNotifications)
         {
             _listSessions = listSessions;
             _evtProgressNotifications = evtProgressNotifications;
             Stopwatch oSW = Stopwatch.StartNew();
-            Hashtable htFile = JSON.JsonDecode(oSR.ReadToEnd(), out _) as Hashtable;
+            string sJSONData = oSR.ReadToEnd();
+            Hashtable htFile = JSON.JsonDecode(sJSONData, out _) as Hashtable;
             if (null == htFile)
             {
-                NotifyProgress(1.00f, "Aborting; file is not properly-formatted NetLog JSON.");
-                FiddlerApplication.DoNotifyUser("This file is not properly-formatted NetLog JSON.", "Import aborted");
-                return;
+                int iEnd = Math.Max(sJSONData.LastIndexOf(",\n"), sJSONData.LastIndexOf(",\r"));
+                if (iEnd > 0) {
+                    sJSONData = sJSONData.Substring(0, iEnd) + "]}";
+                    htFile = JSON.JsonDecode(sJSONData, out _) as Hashtable;
+                }
+                if (null == htFile) {
+                    NotifyProgress(1.00f, "Aborting; file is not properly-formatted NetLog JSON.");
+                    FiddlerApplication.DoNotifyUser("This file is not properly-formatted NetLog JSON.", "Import aborted");
+                    return;
+                }
+                else { FiddlerApplication.DoNotifyUser("This file was truncated and may be missing data.", "Warning"); }
             }
 
             NotifyProgress(0.25f, "Finished parsing JSON file; took " + oSW.ElapsedMilliseconds + "ms.");
@@ -134,13 +144,13 @@ namespace FiddlerImportNetlog
                 {
                     FiddlerApplication.DoNotifyUser("This JSON file does not seem to contain NetLog data.", "Unexpected Data");
                     Session sessFile = Session.BuildFromData(false,
-                        new HTTPRequestHeaders(
-                            String.Format("/file.json"),
-                            new[] { "Host: IMPORTED", "Date: " + DateTime.UtcNow.ToString() }),
-                        Utilities.emptyByteArray,
-                        new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
-                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                            new HTTPRequestHeaders(
+                                String.Format("/file.json"),
+                                new[] { "Host: IMPORTED", "Date: " + DateTime.UtcNow.ToString() }),
+                            Utilities.emptyByteArray,
+                            new HTTPResponseHeaders(200, "File Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                            Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
+                            SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
                     listSessions.Insert(0, sessFile);
                 }
                 else
@@ -277,20 +287,7 @@ namespace FiddlerImportNetlog
 
             NotifyProgress(0.75f, "Finished reading event entries, saw " + cURLRequests.ToString() + " URLRequests");
 
-            iLastPct = GenerateSessionsFromURLRequests(dictURLRequests);
-
-         /*   StringBuilder sbClientInfo = new StringBuilder();
-            sbClientInfo.AppendFormat("Sensitivity:\t{0}\n", sDetailLevel);
-            sbClientInfo.AppendFormat("Client:\t\t{0} v{1}\n", sClient, htClientInfo["version"]);
-            sbClientInfo.AppendFormat("Channel:\t\t{0}\n", htClientInfo["version_mod"]);
-            sbClientInfo.AppendFormat("Commit Hash:\t{0}\n", htClientInfo["cl"]);
-            sbClientInfo.AppendFormat("OS:\t\t{0}\n", htClientInfo["os_type"]);
-
-            sbClientInfo.AppendFormat("\nCommandLine:\t{0}\n\n", htClientInfo["command_line"]);
-            sbClientInfo.AppendFormat("Capture started:\t{0}\n", dtBase);
-            sbClientInfo.AppendFormat("URLRequests:\t\t{0} found.\n", cURLRequests);
-
-            sessSummary.utilSetResponseBody(sbClientInfo.ToString());*/
+            GenerateSessionsFromURLRequests(dictURLRequests);
 
             //GenerateDebugTreeSession(dictURLRequests);
             //GenerateSocketListSession(dictSockets);
@@ -329,7 +326,7 @@ namespace FiddlerImportNetlog
         {
             if (!(htFile["constants"] is Hashtable htConstants)) return false;
             if (!(htConstants["clientInfo"] is Hashtable htClientInfo)) return false;
-            this.sClient = htClientInfo["name"] as string;
+            this._sClient = htClientInfo["name"] as string;
 
             #region LookupConstants
             Hashtable htEventTypes = htConstants["logEventTypes"] as Hashtable;
@@ -397,49 +394,56 @@ namespace FiddlerImportNetlog
             object o = htConstants["timeTickOffset"];
             if (o is string)
             {
-                baseTime = Int64.Parse(o as string);
+                _baseTime = Int64.Parse(o as string);
             }
             else
             {
-                baseTime = (long)(double)o;
+                _baseTime = (long)(double)o;
             }
-            DateTimeOffset dtBase = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(baseTime), TimeZoneInfo.Local);
-            FiddlerApplication.Log.LogFormat("Base capture time is {0} aka {1}", baseTime, dtBase);
+            _dtBaseTime = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(_baseTime), TimeZoneInfo.Local);
+            FiddlerApplication.Log.LogFormat("Base capture time is {0} aka {1}", _baseTime, _dtBaseTime);
             #endregion
 
             // Create a Summary Session, the response body of which we'll fill in later.
             Session sessSummary = Session.BuildFromData(false,
                     new HTTPRequestHeaders(
-                        String.Format("/CAPTURE_INFO"), // TODO: Add Machine name?
-                        new[] { "Host: NETLOG" /* TODO: Put something useful here */, "Date: " + dtBase.ToString("r") }),
+                        String.Format("/CAPTURE_INFO"),
+                        new[] { "Host: NETLOG" /* TODO: Put something useful here */, "Date: " + _dtBaseTime.ToString("r") }),
                     Utilities.emptyByteArray,
                     new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: text/plain; charset=utf-8" }),
                     Utilities.emptyByteArray,
                     SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+            setAllTimers(sessSummary, _baseTime);
             _listSessions.Add(sessSummary);
 
-            _listSessions.Add(Session.BuildFromData(false,
-                new HTTPRequestHeaders(
-                    String.Format("/RAW_JSON"), // TODO: Add Machine name?
-                    new[] { "Host: NETLOG" }),
-                Utilities.emptyByteArray,
-                new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
-                SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+            { // Create a RAW data session with all of the JSON text for debugging purposes.
+                Session sessRaw = Session.BuildFromData(false,
+                        new HTTPRequestHeaders(
+                            String.Format("/RAW_JSON"),
+                            new[] { "Host: NETLOG" }),
+                        Utilities.emptyByteArray,
+                        new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htFile)),
+                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                setAllTimers(sessRaw, _baseTime);
+                _listSessions.Add(sessRaw);
+            }
 
             Hashtable htPolledData = htFile["polledData"] as Hashtable;
             if (null != htPolledData)
             {
                 ArrayList alExtensions = FilterExtensions(htPolledData["extensionInfo"] as ArrayList);
 
-                _listSessions.Add(Session.BuildFromData(false,
+                Session sessExtensions = Session.BuildFromData(false,
                         new HTTPRequestHeaders(
-                            String.Format("/ENABLED_EXTENSIONS"), // TODO: Add Machine name?
+                            String.Format("/ENABLED_EXTENSIONS"),
                             new[] { "Host: NETLOG" }),
                         Utilities.emptyByteArray,
                         new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
                         Encoding.UTF8.GetBytes(JSON.JsonEncode(alExtensions)),
-                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                setAllTimers(sessExtensions, _baseTime);
+                _listSessions.Add(sessExtensions);
             }
 
             int iEvent = -1;
@@ -578,17 +582,17 @@ namespace FiddlerImportNetlog
 
             NotifyProgress(0.75f, "Finished reading event entries, saw " + cURLRequests.ToString() + " URLRequests");
 
-            iLastPct = GenerateSessionsFromURLRequests(dictURLRequests);
+            GenerateSessionsFromURLRequests(dictURLRequests);
 
             StringBuilder sbClientInfo = new StringBuilder();
             sbClientInfo.AppendFormat("Sensitivity:\t{0}\n", sDetailLevel);
-            sbClientInfo.AppendFormat("Client:\t\t{0} v{1}\n", sClient, htClientInfo["version"]);
+            sbClientInfo.AppendFormat("Client:\t\t{0} v{1}\n", _sClient, htClientInfo["version"]);
             sbClientInfo.AppendFormat("Channel:\t\t{0}\n", htClientInfo["version_mod"]);
             sbClientInfo.AppendFormat("Commit Hash:\t{0}\n", htClientInfo["cl"]);
             sbClientInfo.AppendFormat("OS:\t\t{0}\n", htClientInfo["os_type"]);
 
             sbClientInfo.AppendFormat("\nCommandLine:\t{0}\n\n", htClientInfo["command_line"]);
-            sbClientInfo.AppendFormat("Capture started:\t{0}\n", dtBase);
+            sbClientInfo.AppendFormat("Capture started:\t{0}\n", _dtBaseTime);
             sbClientInfo.AppendFormat("URLRequests:\t\t{0} found.\n", cURLRequests);
 
             sessSummary.utilSetResponseBody(sbClientInfo.ToString());
@@ -661,14 +665,16 @@ namespace FiddlerImportNetlog
 
                 if (htDebug.Count > 0)
                 {
-                    _listSessions.Add(Session.BuildFromData(false,
-                        new HTTPRequestHeaders(
-                            String.Format("/URL_REQUESTS"), // TODO: Add Machine name?
-                            new[] { "Host: NETLOG" }),
-                        Utilities.emptyByteArray,
-                        new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htDebug)),
-                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                    Session sessURLRequests = Session.BuildFromData(false,
+                            new HTTPRequestHeaders(
+                                String.Format("/URL_REQUESTS"),
+                                new[] { "Host: NETLOG" }),
+                            Utilities.emptyByteArray,
+                            new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                            Encoding.UTF8.GetBytes(JSON.JsonEncode(htDebug)),
+                            SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                    setAllTimers(sessURLRequests, _baseTime);
+                    _listSessions.Add(sessURLRequests);
                 }
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDebugTreeSession failed: "+ DescribeExceptionWithStack(e)); }
@@ -977,20 +983,30 @@ namespace FiddlerImportNetlog
                     }
                 }
 
-                // Don't add a node if there were no secure sockets.
+                // Don't add a node if there were no sockets.
                 if (htAllSockets.Count > 0)
                 {
-                    _listSessions.Add(Session.BuildFromData(false,
-                        new HTTPRequestHeaders(
-                            String.Format("/SOCKETS"), // TODO: Add Machine name?
-                            new[] { "Host: NETLOG" }),
-                        Utilities.emptyByteArray,
-                        new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllSockets)),
-                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                    Session sessAllSockets = Session.BuildFromData(false,
+                            new HTTPRequestHeaders(
+                                String.Format("/SOCKETS"),
+                                new[] { "Host: NETLOG" }),
+                            Utilities.emptyByteArray,
+                            new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                            Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllSockets)),
+                            SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                    setAllTimers(sessAllSockets, _baseTime);
+                    _listSessions.Add(sessAllSockets);
                 }
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateSocketListSession failed: " + DescribeExceptionWithStack(e)); }
+        }
+
+        private static void setAllTimers(Session oS, long dt)
+        {
+            var oTimers = oS.Timers;
+            oTimers.ClientConnected = oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest =
+            oTimers.ClientBeginResponse = oTimers.FiddlerGotResponseHeaders = oTimers.ServerBeginResponse =
+            oTimers.ServerDoneResponse = oTimers.ClientDoneResponse = GetTimeStamp(0.0, dt);
         }
 
         /* TLS 1.3: https://datatracker.ietf.org/doc/html/rfc8446#section-4.3.2
@@ -1118,14 +1134,16 @@ namespace FiddlerImportNetlog
                     htAllResolutions.Add(sHost, htData);
                 }
 
-                _listSessions.Add(Session.BuildFromData(false,
-                    new HTTPRequestHeaders(
-                        String.Format("/DNS_LOOKUPS"), // TODO: Add Machine name?
-                        new[] { "Host: NETLOG" }),
-                    Utilities.emptyByteArray,
-                    new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
-                    Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllResolutions)),
-                    SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache));
+                Session sessDNS = Session.BuildFromData(false,
+                        new HTTPRequestHeaders(
+                            String.Format("/DNS_LOOKUPS"),
+                            new[] { "Host: NETLOG" }),
+                        Utilities.emptyByteArray,
+                        new HTTPResponseHeaders(200, "Analyzed Data", new[] { "Content-Type: application/json; charset=utf-8" }),
+                        Encoding.UTF8.GetBytes(JSON.JsonEncode(htAllResolutions)),
+                        SessionFlags.ImportedFromOtherTool | SessionFlags.RequestGeneratedByFiddler | SessionFlags.ResponseGeneratedByFiddler | SessionFlags.ServedFromCache);
+                setAllTimers(sessDNS, _baseTime);
+                _listSessions.Add(sessDNS);
             }
             catch (Exception e) { FiddlerApplication.Log.LogFormat("GenerateDNSResolutionListSession failed: " + DescribeExceptionWithStack(e)); }
         }
@@ -1241,7 +1259,7 @@ namespace FiddlerImportNetlog
             List<string> listCookieSetExclusions = new List<string>();
 
             dictSessionFlags["X-Netlog-URLRequest-ID"] = kvpUR.Key.ToString();
-            dictSessionFlags["X-ProcessInfo"] = String.Format("{0}:0", sClient);
+            dictSessionFlags["X-ProcessInfo"] = String.Format("{0}:0", _sClient);
 
             string sURL = String.Empty;
             string sMethod = "GET";
@@ -1344,7 +1362,7 @@ namespace FiddlerImportNetlog
                         sMethod = (string)htParams["method"];
 
                         // In case we don't get these later.
-                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);
+                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], _baseTime);
                         continue;
                     }
 
@@ -1376,7 +1394,7 @@ namespace FiddlerImportNetlog
 
                     if (iType == NetLogMagics.SEND_HEADERS)
                     {
-                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);
+                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], _baseTime);
                         ArrayList alHeaderLines = htParams["headers"] as ArrayList;
                         if (null != alHeaderLines && alHeaderLines.Count > 0)
                         {
@@ -1390,7 +1408,7 @@ namespace FiddlerImportNetlog
                     if (iType == NetLogMagics.SEND_QUIC_HEADERS)
                     {
                         dictSessionFlags["X-Transport"] = "QUIC";
-                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);
+                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], _baseTime);
                         string sRequest = HeadersToString(htParams["headers"]);
                         if (!String.IsNullOrEmpty(sRequest))
                         {
@@ -1403,7 +1421,7 @@ namespace FiddlerImportNetlog
                     if (iType == NetLogMagics.SEND_HTTP2_HEADERS)
                     {
                         dictSessionFlags["X-Transport"] = "HTTP2";
-                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], baseTime);
+                        oTimers.ClientBeginRequest = oTimers.FiddlerGotRequestHeaders = oTimers.FiddlerBeginRequest = GetTimeStamp(htEvent["time"], _baseTime);
                         string sRequest = HeadersToString(htParams["headers"]);
                         if (!String.IsNullOrEmpty(sRequest))
                         {
@@ -1498,7 +1516,7 @@ namespace FiddlerImportNetlog
                             }
                         }
 
-                        oTimers.ClientBeginResponse = oTimers.FiddlerGotResponseHeaders = oTimers.ServerBeginResponse = GetTimeStamp(htEvent["time"], baseTime);
+                        oTimers.ClientBeginResponse = oTimers.FiddlerGotResponseHeaders = oTimers.ServerBeginResponse = GetTimeStamp(htEvent["time"], _baseTime);
                         continue;
                     }
 
@@ -1516,7 +1534,7 @@ namespace FiddlerImportNetlog
                         {
                             cbDroppedResponseBody += getIntValue(htParams["byte_count"], 0);
                         }
-                        oTimers.ServerDoneResponse = oTimers.ClientDoneResponse = GetTimeStamp(htEvent["time"], baseTime);
+                        oTimers.ServerDoneResponse = oTimers.ClientDoneResponse = GetTimeStamp(htEvent["time"], _baseTime);
                         continue;
                     }
                 }
