@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright ©2024 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.3.5.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.3.5.1")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
 
 
@@ -20,7 +20,7 @@ t=3262 [st=0]    HTTP_STREAM_JOB_BOUND_TO_REQUEST
                  --> source_dependency = 1701 (URL_REQUEST)
 */
 
-// v.1.3.5
+// v.1.3.5.1
 // Add support for truncated file recovery.
 
 // v1.3.4.5
