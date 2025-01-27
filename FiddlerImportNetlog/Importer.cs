@@ -773,7 +773,7 @@ namespace FiddlerImportNetlog
                             // Okay, it's a ClientHello. Log it.
                             string sBase64Bytes = htParams["bytes"] as string;
                             if (String.IsNullOrEmpty(sBase64Bytes)) continue;
-                            FiddlerApplication.Log.LogFormat("Saw Handshake Message Sent of type={0}", iHandshakeMessageType);
+                            // FiddlerApplication.Log.LogFormat("Saw Handshake Message Sent of type={0}", iHandshakeMessageType);
 
                             if (iHandshakeMessageType == 1 /*ClientHello*/)
                             {
