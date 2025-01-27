@@ -3,10 +3,10 @@ using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("FiddlerImportNetlog")]
 [assembly: AssemblyDescription("Import Chromium NetLog events to Fiddler")]
-[assembly: AssemblyCopyright("Copyright ©2024 Eric Lawrence")]
+[assembly: AssemblyCopyright("Copyright ©2025 Eric Lawrence")]
 [assembly: System.Resources.NeutralResourcesLanguage("en-US")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.3.5.1")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
+[assembly: AssemblyVersion("1.3.6.0")]  // ALWAYS UPDATE THE VERSION in the [ProfferFormat] attribute in FiddlerInterface.cs to match!
 [assembly: Fiddler.RequiredVersion("4.6.0.0")]
 
 
@@ -19,6 +19,10 @@ t=3262 [st=0]        SOCKET_POOL_BOUND_TO_SOCKET
 t=3262 [st=0]    HTTP_STREAM_JOB_BOUND_TO_REQUEST
                  --> source_dependency = 1701 (URL_REQUEST)
 */
+
+// v.1.3.6.0
+// Support "expire" for cookies (added in Chrome 134)
+// Update copyright to 2025
 
 // v.1.3.5.1
 // Add support for truncated file recovery.

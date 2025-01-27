@@ -1444,17 +1444,28 @@ namespace FiddlerImportNetlog
                         // bool bIsLegacyCookie = (htParams["msft_browser_legacy_cookie"] as Boolean) ?? false;
                         // string bBrowserProvenance = (htParams["browser_provenance"] as string) ?? String.Empty /*Native*/;
 
-        // TODO: As of Chrome 81, CookieInclusionStatusNetLogParams also adds |domain| and |path| attributes available if "sensitive" data is included.
+                        // TODO: As of Chrome 81, CookieInclusionStatusNetLogParams also adds |domain| and |path| attributes available if "sensitive" data is included.
 
-        // In Chrome 81.3993, the |exclusion_reason| field was renamed to |status| because the |cookie_inclusion_status| entries are
-        // now also emitted for included cookies.
-        string sExclusionReasons = (htParams["exclusion_reason"] as string);
-                        if (String.IsNullOrEmpty(sExclusionReasons)) sExclusionReasons = (htParams["status"] as string) ?? String.Empty;
+                        // In Chrome 81.3993, the |exclusion_reason| field was renamed to |status| because the |cookie_inclusion_status| entries are
+                        // now also emitted for included cookies.
+                        string sExclusionReasons = (htParams["exclusion_reason"] as string);
+                                        if (String.IsNullOrEmpty(sExclusionReasons)) sExclusionReasons = (htParams["status"] as string) ?? String.Empty;
 
                         // If the log indicates that the cookie was included, just skip it for now.
-                        // TODO: Offer a richer cookie-debugging story that exposes the domain/path/inclusion status.
                         // https://source.chromium.org/chromium/chromium/src/+/master:net/cookies/canonical_cookie.cc;l=899?q=GetDebugString%20cookie&ss=chromium&originalUrl=https:%2F%2Fcs.chromium.org%2F
-                        if (sExclusionReasons.OICContains("include")) continue;
+                        if (sExclusionReasons.OICContains("include"))
+                        {
+                            if ("expire" == sOperation)
+                            {
+                                // EXCLUDE_INVALID_DOMAIN,EXCLUDE_OVERWRITE_HTTP_ONLY,EXCLUDE_OVERWRITE_SECURE,
+                                // EXCLUDE_FAILURE_TO_STORE (e.g. Set-Cookie header > 4096 characters),
+                                // EXCLUDE_NONCOOKIEABLE_SCHEME,EXCLUDE_INVALID_PREFIX
+                                listCookieSetExclusions.Add(String.Format("The cookie '{0}' was sent already expired.", sCookieName));
+                            }
+
+                            // TODO: Offer a richer cookie-debugging story that exposes the domain/path/inclusion status.
+                            continue;
+                        }
 
                         // See |ExclusionReason| list in https://cs.chromium.org/chromium/src/net/cookies/canonical_cookie.h?type=cs&q=EXCLUDE_SAMESITE_LAX&sq=package:chromium&g=0&l=304
                         // EXCLUDE_HTTP_ONLY, EXCLUDE_SECURE_ONLY,EXCLUDE_DOMAIN_MISMATCH,EXCLUDE_NOT_ON_PATH,EXCLUDE_INVALID_PREFIX
@@ -1468,6 +1479,10 @@ namespace FiddlerImportNetlog
                             // EXCLUDE_FAILURE_TO_STORE (e.g. Set-Cookie header > 4096 characters),
                             // EXCLUDE_NONCOOKIEABLE_SCHEME,EXCLUDE_INVALID_PREFIX
                             listCookieSetExclusions.Add(String.Format("Blocked set of '{0}' due to '{1}'", sCookieName, sExclusionReasons));
+                        }
+                        else if ("expire" == sOperation)
+                        {
+                            listCookieSetExclusions.Add(String.Format("Blocked expire (set) of '{0}' due to '{1}'", sCookieName, sExclusionReasons));
                         }
                         else if ("send" == sOperation)
                         {
@@ -1552,7 +1567,7 @@ namespace FiddlerImportNetlog
             bool bCookieSetFailed = listCookieSetExclusions.Count > 0;
             if (bCookieSetFailed) {
                 dictSessionFlags["ui-backcolor"] = "#FF8080";
-                dictSessionFlags["ui-comments"] = "A Set-Cookie was ignored";
+                dictSessionFlags["ui-comments"] = "A cookie set by Set-Cookie was not stored.";
                 AnnotateHeadersWithUnstoredCookies(oRPH, listCookieSetExclusions);
             }
             BuildAndAddSession(ref oSF, oRQH, oRPH, msResponseBody, dictSessionFlags, sURL, sMethod, oTimers, cbDroppedResponseBody);
@@ -1573,7 +1588,7 @@ namespace FiddlerImportNetlog
             if (null == oRPH) return;
             foreach (string sExclusion in listExclusions)
             {
-                oRPH.Add("$NETLOG-CookieNotSet", sExclusion);
+                oRPH.Add("$NETLOG-CookieNotStored", sExclusion);
             }
 
             listExclusions.Clear();
