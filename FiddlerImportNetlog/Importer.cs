@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Fiddler;
-using Fiddler.WebFormats;
+using FiddlerImportNetlog.WebFormats;
 
 namespace FiddlerImportNetlog
 {
